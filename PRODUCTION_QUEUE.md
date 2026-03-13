@@ -37,10 +37,11 @@
 ### Chrome + Live Data
 - [ ] Top bar: SMARTLAB·LAUNCHER left, live UTC clock right (JS setInterval)
 - [ ] Bottom bar: APPSERV1 · 192.168.4.148 · N CONTAINERS RUNNING
-- [ ] Container count: fetch from CommandDeck or SmartToolbox health endpoint (TBD — see OPEN ISSUES)
+- [ ] Container count: hardcode for v1, revisit when CommandDeck agent loop is live
 
 ### Deployment
-- [ ] Add to smartlab-infra docker-compose.yml (nginx static serve or tiny python:3.11 server)
+- [ ] Add to smartlab-infra docker-compose.yml (nginx static serve)
+- [ ] Add nginx route /launcher/ or serve as root
 - [ ] GitHub repo: johnmknight/smartlab-launcher
 - [ ] GH Actions: build + deploy on push to main
 
@@ -53,15 +54,17 @@
 - [ ] Design white line-art illustration for CDK button (representational, right-biased)
 - [ ] Layer: color field → illustration (15–20% opacity) → glyph
 
-### Additional Apps (add buttons as each goes live)
-- [ ] **ArtemisOps** — port :8083 — NASA mission control kiosk
-- [ ] **MarchogSystemsOps** — port :8083 — Star Wars multi-screen display controller
-- [ ] **FindAJob** — port :8100 — career ops platform
-- [ ] **VirtualCupola2** — ISS cupola simulation (port TBD)
-- [ ] **CaptainMurphys** — themed home office 3D planner — port :8081
-- [ ] **JohnsSpares** — port :7700
+### Additional Apps — Add buttons as each goes live
+- [x] **SmartToolbox** — :8091 — nginx /toolbox/ ✅ live
+- [x] **CommandDeck** — :8090 — nginx /deck/ ✅ live
+- [x] **ArtemisOps** — :8085 — nginx /artemis/ ✅ live 2026-03-13
+- [x] **MarchogSystemsOps** — :8082 — nginx /marchog/ ✅ live 2026-03-13
+- [ ] **FindAJob** — :8100 — paused (ghcr.io package visibility — needs docker login or make public)
+- [ ] **VirtualCupola2** — port TBD
+- [ ] **CaptainMurphys** — :8081
+- [ ] **JohnsSpares** — :7700
 
 ### Future
-- [ ] App status indicators (ONLINE / OFFLINE dot per button)
+- [ ] App status indicators (ONLINE / OFFLINE dot per button, poll /health)
 - [ ] Keyboard nav: 1–N keys launch apps
-- [ ] "Last accessed" timestamp per app
+- [ ] nginx path (/artemis/, /marchog/ etc.) as click target rather than direct IP:PORT
