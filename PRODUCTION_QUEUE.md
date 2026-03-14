@@ -6,10 +6,24 @@
 
 ## DONE THIS SESSION
 
-### AO Dragon OBJ wireframe fix ✅
-- `buildWireframe()` was calling `c.add()` inside `obj.traverse()`, adding new mesh children that traverse then visited → infinite recursion → stack overflow
-- Fix: collect meshes into array first with `obj.traverse()`, then loop the array separately to apply wireframe materials
-- Dragon OBJ now loads, renders, and rotates correctly on the AO button
+### Dynamic app rendering from CommandDeck API ✅
+- Launcher fetches `GET /deck/api/apps` on boot — all buttons, CLI lines, glyphs,
+  and backgrounds built from response
+- `createButton(app, index)` factory generates monolith HTML per app
+- CLI animation driven by APPS array (no more hardcoded CLI_APPS)
+- Legacy glyphs preserved as LEGACY_GLYPHS lookup (used when glyph_svg is null)
+- Legacy Three.js backgrounds preserved as LEGACY_BG lookup (used when bg_js is null)
+- Keyboard nav adapts to dynamic app count (1..N)
+- Status polling uses route_path from API
+- Error state shown in CLI area if API unreachable
+- Removed: all hardcoded button HTML, CLI_APPS, APP_MANIFEST, per-app CSS color vars
+
+### CommandDeck API additions ✅ (in CommandDeck repo)
+- `migrate_db()`: adds route_path, glyph_svg, bg_js, is_deployed, sort_order columns
+- Inserts SmartToolbox + CommandDeck as projects (missing from original seed)
+- Sets launcher palette colors and correct ports for all 4 deployed apps
+- `GET /api/apps`: returns deployed apps ordered by sort_order
+- `PATCH /api/projects/{pid}`: supports all fields including new launcher columns
 
 ---
 
@@ -68,8 +82,8 @@ Merged from `index.html` (functional) + `anim-lab.html` (animation lab).
 
 ### Infrastructure
 - [ ] nginx: serve SmartLabLauncher at /launcher/ (currently served ad-hoc)
-- [ ] App manifest API: GET /deck/api/apps → returns {id, code, name, url, port, color} for dynamic buttons
-- [ ] If manifest defined: replace hardcoded buttons with manifest-driven render
+- [x] App manifest API: GET /deck/api/apps ✅ — built and tested
+- [x] Replace hardcoded buttons with manifest-driven render ✅
 
 ---
 
@@ -77,8 +91,9 @@ Merged from `index.html` (functional) + `anim-lab.html` (animation lab).
 
 | File | Status |
 |------|--------|
-| index.html | ✅ FINAL — merged boot animation + functional launcher |
+| index.html | ✅ Dynamic — fetches apps from CommandDeck API |
 | anim-lab.html | Keep — reference / sandbox |
 | font-preview.html | Keep — reference |
 | dragon.obj | Present — needs nginx static serving |
 | concepts/ | Reference — keep |
+| DESIGN_DYNAMIC_LAUNCHER.md | ✅ Architecture + design doc |

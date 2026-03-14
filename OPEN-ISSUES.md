@@ -24,17 +24,21 @@
 
 ### RESOLVED THIS SESSION
 - ✅ AO Dragon OBJ wireframe infinite recursion — `buildWireframe()` stack overflow fixed (collect-then-process pattern)
+- ✅ Dynamic app rendering — all buttons now built from CommandDeck API, no hardcoded HTML
+- ✅ TST dummy button — no longer an issue, buttons are API-driven
+- ✅ Animation sequence integrated — CLI boot + button reveal both driven by API data
 
 ### OPEN
 - [ ] Container count hardcoded "— CONTAINERS" until CDK API responds
 - [ ] Status polling uses `mode: no-cors` — opaque responses always look "online"
   - Need a CORS-enabled health endpoint on each app, or a SmartLab proxy
-- [ ] TST dummy button still in file — remove before production deploy
 - [ ] No keyboard nav visual feedback beyond box-shadow ring
 - [ ] Self-host Orbitron woff2 in fonts/ for offline/LAN use
 
 ## Infrastructure
 
 - [ ] nginx needs to serve dragon.obj from SmartLabLauncher static root
-- [ ] App manifest API not yet defined — needed for dynamic button generation
-- [ ] Animation sequence not integrated into index.html yet
+- [x] App manifest API — `GET /deck/api/apps` built and tested ✅
+- [x] Dynamic button generation from manifest ✅
+- [x] Animation sequence integrated into index.html ✅
+- [ ] Phase 3: Admin mode for glyph/background generation (see DESIGN_DYNAMIC_LAUNCHER.md)

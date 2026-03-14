@@ -238,24 +238,24 @@ in `bg_js` to eliminate the external dependency.
 
 ## Implementation Plan
 
-### Phase 1 — CommandDeck API (do first, everything depends on it)
-1. Add `route_path`, `glyph_svg`, `bg_js`, `is_deployed`, `sort_order`
+### Phase 1 — CommandDeck API ✅ COMPLETE
+1. ✅ Add `route_path`, `glyph_svg`, `bg_js`, `is_deployed`, `sort_order`
    columns to `projects`
-2. Migrate seed data: set `is_deployed=1` for STB, CDK, AO, MSO; add
+2. ✅ Migrate seed data: set `is_deployed=1` for STB, CDK, AO, MSO; add
    `route_path` values; add missing STB and CDK project rows
-3. Build `GET /api/apps` endpoint (filter `is_deployed=1`, return shape above)
-4. Add `PATCH /api/projects/{id}` support for new columns (needed by admin mode)
-5. Test: hit endpoint from browser, confirm response shape
+3. ✅ Build `GET /api/apps` endpoint (filter `is_deployed=1`, return shape above)
+4. ✅ Add `PATCH /api/projects/{id}` support for new columns (needed by admin mode)
+5. ✅ Test: hit endpoint from browser, confirm response shape
 
-### Phase 2 — Launcher Dynamic Rendering
-1. Add fetch call to `/deck/api/apps` on DOMContentLoaded
-2. Build `createButton(app, index)` function that generates monolith HTML
-3. Build `buildCLIScript(apps)` that generates CLI_APPS from response
-4. Wire dynamic buttons into reveal sequence + keyboard nav
-5. Execute `bg_js` per button via `new Function('canvas', app.bg_js)`
-6. Backfill existing glyph SVG + background JS into CommandDeck DB
-7. Remove all hardcoded button HTML, CLI_APPS, APP_MANIFEST, init functions
-8. Test: full boot with dynamic data, verify all 4 buttons render correctly
+### Phase 2 — Launcher Dynamic Rendering ✅ COMPLETE
+1. ✅ Add fetch call to `/deck/api/apps` on DOMContentLoaded
+2. ✅ Build `createButton(app, index)` function that generates monolith HTML
+3. ✅ Build CLI animation from APPS array (replaces hardcoded CLI_APPS)
+4. ✅ Wire dynamic buttons into reveal sequence + keyboard nav
+5. ✅ Execute `bg_js` per button via `new Function('canvas', app.bg_js)`
+6. ✅ Legacy glyph SVG + background JS preserved as fallback lookups
+7. ✅ Remove all hardcoded button HTML, CLI_APPS, APP_MANIFEST, init functions
+8. ✅ Test: full boot with dynamic data, all 4 buttons render correctly
 
 ### Phase 3 — Admin Mode
 1. Detect `?admin=1` URL param, show admin indicator
