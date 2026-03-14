@@ -10,6 +10,9 @@
 - ✅ Backgrounds not firing — `initAllBackgrounds()` never called; added Step 5 to reveal sequence
 - ✅ Button content hidden after background added — `monolith-inner` had `position:relative` breaking absolute-positioned corners/glyph
 
+### RESOLVED
+- ✅ AO Dragon OBJ infinite recursion — `buildWireframe()` added child meshes during `traverse()`, causing stack overflow. Fixed by collecting meshes into array first, then processing separately.
+
 ### OPEN
 - [ ] STB model still slightly larger than AO visually — may need further scale tweak (currently 0.55)
 - [ ] MSO coffee glyph position shifts as model rotates — glyph is drawn in model space, looks fine at rest
@@ -18,6 +21,9 @@
 - [ ] No error state shown if dragon.obj fetch fails (currently silent console.warn)
 
 ## index.html (Functional Launcher)
+
+### RESOLVED THIS SESSION
+- ✅ AO Dragon OBJ wireframe infinite recursion — `buildWireframe()` stack overflow fixed (collect-then-process pattern)
 
 ### OPEN
 - [ ] Container count hardcoded "— CONTAINERS" until CDK API responds

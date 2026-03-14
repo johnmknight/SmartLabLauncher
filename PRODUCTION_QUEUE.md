@@ -6,6 +6,15 @@
 
 ## DONE THIS SESSION
 
+### AO Dragon OBJ wireframe fix ✅
+- `buildWireframe()` was calling `c.add()` inside `obj.traverse()`, adding new mesh children that traverse then visited → infinite recursion → stack overflow
+- Fix: collect meshes into array first with `obj.traverse()`, then loop the array separately to apply wireframe materials
+- Dragon OBJ now loads, renders, and rotates correctly on the AO button
+
+---
+
+## DONE THIS SESSION
+
 ### index.html — Full Production Launcher ✅
 Merged from `index.html` (functional) + `anim-lab.html` (animation lab).
 
