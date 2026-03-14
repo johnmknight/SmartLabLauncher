@@ -57,7 +57,7 @@ Server-rendered pages:
 
 ## CDK — CommandDeck (http://192.168.4.148/deck/)
 
-### Status: KNOWN — NOT BLOCKING
+### Status: DEPLOYED (new API) — reverse proxy fix needed
 
 - Page loads (200), `/api/projects` returns 8 items
 - `/api/apps` returns 404 — expected, running old Docker image
