@@ -51,6 +51,7 @@ fetches it via a new API endpoint at boot time.
 | `glyph_svg` | TEXT | Inner SVG content (no Cobb border) | `<rect x="14" y="17" .../>` |
 | `bg_js` | TEXT | Three.js background function body | JS code string |
 | `is_deployed` | INTEGER | Whether app appears on launcher | `1` or `0` |
+| `sort_order` | INTEGER | Display order on launcher (L→R) | `0`, `1`, `2`, `3` |
 
 ### Existing columns used by launcher
 
@@ -105,7 +106,7 @@ with all fields the launcher needs.
 
 ### Filtering
 - Only returns rows where `is_deployed = 1`
-- Ordered by `port` (or a future `sort_order` column)
+- Ordered by `sort_order ASC`
 
 ---
 
@@ -238,7 +239,8 @@ in `bg_js` to eliminate the external dependency.
 ## Implementation Plan
 
 ### Phase 1 — CommandDeck API (do first, everything depends on it)
-1. Add `route_path`, `glyph_svg`, `bg_js`, `is_deployed` columns to `projects`
+1. Add `route_path`, `glyph_svg`, `bg_js`, `is_deployed`, `sort_order`
+   columns to `projects`
 2. Migrate seed data: set `is_deployed=1` for STB, CDK, AO, MSO; add
    `route_path` values; add missing STB and CDK project rows
 3. Build `GET /api/apps` endpoint (filter `is_deployed=1`, return shape above)
@@ -264,21 +266,30 @@ in `bg_js` to eliminate the external dependency.
 
 ---
 
-## Open Questions
+## Resolved Questions
 
-1. **Sort order** — should the API return apps in a specific order? Currently
-   buttons are laid out L→R. Options: port number, alphabetical, or a new
-   `sort_order` column.
+1. **Sort order** — Add a `sort_order INTEGER DEFAULT 0` column to the
+   projects table. We're already adding columns, and explicit ordering avoids
+   fragile implicit sort-by-port or alphabetical. The `/api/apps` endpoint
+   returns results ordered by `sort_order ASC`.
 
-2. **dragon.obj serving** — keep as external file served by nginx, or inline
-   as base64 in `bg_js`? File is 398KB; base64 would be ~530KB in the DB.
-   External file is cleaner but adds a deployment dependency.
+2. **dragon.obj serving** — Keep as external file served by nginx at
+   `/launcher/dragon.obj`. Inlining 530KB of base64 into a DB text column
+   bloats every API response and makes `bg_js` unreadable. The `bg_js`
+   function body references it by relative URL (`fetch('dragon.obj')`),
+   same as today. Deployment dependency is just one nginx location block.
 
-3. **Claude API key in admin mode** — stored in localStorage? Passed as URL
-   param? Fetched from CommandDeck? Need to decide before Phase 3.
+3. **Claude API key in admin mode** — Stored in localStorage. Admin mode is
+   a local dev tool, not a production feature. Prompt on first use, persist
+   in browser. No backend changes needed.
 
-4. **Hot reload** — should the launcher re-fetch the manifest periodically,
-   or only on page load? Current design is load-once.
+4. **Hot reload** — Load once at boot. The launcher is a cinematic experience
+   with a boot animation — rebuilding the DOM and re-initializing Three.js
+   scenes mid-session has no use case. Deploy a new app → refresh the page.
 
-5. **Container health** — Phase 1 can ship without live Docker status. Add
-   Docker socket mount to CommandDeck container later as an enhancement.
+5. **Container health** — Deferred. Skip Docker socket integration for all
+   three phases. The existing status polling (HEAD request to each app's
+   route_path via nginx) already provides online/offline state and is
+   independent of Docker. Docker socket integration (volume mount +
+   Python docker library) is a future enhancement for finer granularity
+   (running vs. stopped vs. not found).
