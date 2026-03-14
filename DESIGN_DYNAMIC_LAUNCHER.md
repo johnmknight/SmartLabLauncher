@@ -83,25 +83,28 @@ with all fields the launcher needs.
 ### Response shape
 
 ```json
-[
-  {
-    "id": "smarttoolbox",
-    "code": "STB",
-    "name": "SmartToolbox",
-    "color": "#1A42CC",
-    "port": 8091,
-    "route_path": "/toolbox/",
-    "glyph_svg": "<rect x=\"14\" y=\"17\" ... />",
-    "bg_js": "const scene = new THREE.Scene(); ...",
-    "status": "running"
-  }
-]
+{
+  "app_server_url": "http://192.168.4.148",
+  "apps": [
+    {
+      "id": "smarttoolbox",
+      "code": "STB",
+      "name": "SmartToolbox",
+      "color": "#1A42CC",
+      "port": 8091,
+      "route_path": "/toolbox/",
+      "glyph_svg": "<rect x=\"14\" y=\"17\" ... />",
+      "bg_js": "const scene = new THREE.Scene(); ..."
+    }
+  ]
+}
 ```
 
 ### Fields
+- `app_server_url` — base URL for all production apps (e.g. `http://192.168.4.148`).
+  The launcher builds every button href as `app_server_url + route_path`.
+  Stored as a configuration value in CommandDeck, not hardcoded anywhere.
 - `code` — mapped from `short_name`
-- `status` — live container state from Docker socket (`running`, `stopped`,
-  `not_found`). Optional enhancement; can start without this and add later.
 - All other fields direct from `projects` table
 
 ### Filtering
@@ -293,3 +296,10 @@ in `bg_js` to eliminate the external dependency.
    independent of Docker. Docker socket integration (volume mount +
    Python docker library) is a future enhancement for finer granularity
    (running vs. stopped vs. not found).
+
+6. **App server URL** — Returned by the API as `app_server_url`. The launcher
+   never guesses or hardcodes where production apps live. CommandDeck stores
+   this as a config value (e.g. `http://192.168.4.148`) and includes it in
+   every `/api/apps` response. All button hrefs, status polling, and
+   container count use this value. Falls back to `window.location.origin`
+   if missing (which works when launcher is served by the same nginx).
