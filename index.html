@@ -257,13 +257,10 @@ async function typeInto(el, str, charDelay, withCursor) {
 <script>
 // ── Global app state (populated from CommandDeck API) ──
 let APPS = [];     // array from GET /api/apps
-// App server: always appserv1 nginx — this launcher exists to open production apps
-const APP_SERVER = (location.hostname === '192.168.4.148')
-  ? window.location.origin                // already on appserv1
-  : 'http://192.168.4.148';              // dev: point to appserv1
-// CommandDeck API: may be behind nginx or direct for local dev
+let APP_SERVER = ''; // base URL for production apps — set from API response
+// CommandDeck API: direct in local dev, behind nginx in production
 const CDK_BASE = (location.port === '7700' || location.port === '8090')
-  ? 'http://localhost:8090' : APP_SERVER + '/deck';
+  ? 'http://localhost:8090' : window.location.origin + '/deck';
 
 // ── Legacy glyph SVG (inner content only, no Cobb border) ──
 const LEGACY_GLYPHS = {
@@ -427,14 +424,16 @@ async function runCLI() {
 
 // ── Boot entry point ──
 window.addEventListener('DOMContentLoaded', async () => {
-  // Fetch app manifest from CommandDeck
+  // Fetch app manifest from CommandDeck — single source of truth
   try {
     const r = await fetch(CDK_BASE + '/api/apps');
     if (!r.ok) throw new Error(r.status);
-    APPS = await r.json();
+    const data = await r.json();
+    // API returns { app_server_url, apps[] }
+    APP_SERVER = data.app_server_url || window.location.origin;
+    APPS = data.apps || [];
   } catch (e) {
     console.error('Failed to fetch app manifest:', e);
-    // Fallback: show error in CLI area
     document.getElementById('cli').style.display = 'flex';
     const errEl = addRow(true);
     errEl.style.color = 'rgba(255,120,100,0.85)';
