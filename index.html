@@ -257,17 +257,13 @@ async function typeInto(el, str, charDelay, withCursor) {
 <script>
 // ── Global app state (populated from CommandDeck API) ──
 let APPS = [];     // array from GET /api/apps
-const BASE = window.location.origin;
-// Local dev: launcher on :7700, apps on their own ports — no nginx
-// Production: all apps behind nginx on same origin
-const IS_DEV = (location.port === '7700' || location.port === '8090');
-const CDK_BASE = IS_DEV ? 'http://localhost:8090' : BASE + '/deck';
-
-// Build the correct href for an app (dev vs production)
-function appHref(app) {
-  if (IS_DEV) return 'http://localhost:' + app.port + '/';
-  return BASE + (app.route_path || '/');
-}
+// App server: always appserv1 nginx — this launcher exists to open production apps
+const APP_SERVER = (location.hostname === '192.168.4.148')
+  ? window.location.origin                // already on appserv1
+  : 'http://192.168.4.148';              // dev: point to appserv1
+// CommandDeck API: may be behind nginx or direct for local dev
+const CDK_BASE = (location.port === '7700' || location.port === '8090')
+  ? 'http://localhost:8090' : APP_SERVER + '/deck';
 
 // ── Legacy glyph SVG (inner content only, no Cobb border) ──
 const LEGACY_GLYPHS = {
@@ -300,7 +296,7 @@ function createButton(app, index) {
   el.className = 'monolith';
   el.id = 'btn-' + app.code.toLowerCase();
   el.style.setProperty('--col', app.color);
-  el.href = appHref(app);
+  el.href = APP_SERVER + (app.route_path || '/');
   el.target = '_blank';
   el.dataset.key = String(index + 1);
 
@@ -479,7 +475,7 @@ async function checkApp(app) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
-    await fetch(appHref(app), { method:'HEAD', mode:'no-cors', signal:ctrl.signal });
+    await fetch(APP_SERVER + (app.route_path || '/'), { method:'HEAD', mode:'no-cors', signal:ctrl.signal });
     clearTimeout(timer);
     setDot(app.code, 'online');
   } catch {
@@ -496,7 +492,7 @@ async function updateContainerCount() {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(CDK_BASE + '/api/containers', { signal:ctrl.signal });
+    const r = await fetch(APP_SERVER + '/deck/api/containers', { signal:ctrl.signal });
     if (r.ok) {
       const data = await r.json();
       const running = Array.isArray(data)
