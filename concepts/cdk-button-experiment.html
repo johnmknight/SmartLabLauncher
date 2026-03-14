@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CDK Button — Pi Rack</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #07070F;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', 'Courier New', monospace;
+}
+.monolith {
+  position: relative; width: 380px; height: 470px;
+  background: #7B22B0; border-radius: 3px; overflow: hidden;
+  cursor: pointer; transition: filter 0.15s ease, transform 0.15s ease;
+}
+.monolith:hover { filter: brightness(1.18); transform: translateY(-3px); }
+.monolith::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:rgba(255,255,255,0.22); z-index:3; }
+.monolith::after  { content:''; position:absolute; inset:0; box-shadow:inset 0 0 40px rgba(0,0,0,0.35); pointer-events:none; z-index:3; }
+#bg-canvas { position:absolute; inset:0; width:100%!important; height:100%!important; z-index:1; opacity:0; transition:opacity 1.2s ease; }
+#bg-canvas.loaded { opacity:1; }
+.corner { position:absolute; font-size:7px; letter-spacing:0.08em; color:rgba(255,255,255,0.42); z-index:2; }
+.tl{top:8px;left:9px;} .tr{top:8px;right:9px;} .br{bottom:8px;right:9px;}
+.monolith-inner { position:relative; z-index:2; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; pointer-events:none; }
+.spacer-top { flex:1; } .spacer-bottom { flex:1; }
+.code { font-size:82px; font-weight:900; letter-spacing:0.06em; line-height:1; color:rgba(255,255,255,0.92); text-align:center; }
+.rule { width:calc(100% - 24px); height:1px; background:rgba(255,255,255,0.18); margin:7px 0; }
+.app-name { font-size:9px; letter-spacing:0.22em; color:rgba(255,255,255,0.55); }
+.glyph-wrap { position:absolute; bottom:14px; left:14px; width:70px; height:70px; z-index:2; }
+</style>
+</head>
+<body>
+<div class="monolith">
+  <canvas id="bg-canvas"></canvas>
+  <div class="corner tl">SYS&middot;02</div>
+  <div class="corner tr">192.168.4.148:8090</div>
+  <div class="monolith-inner">
+    <div class="spacer-top"></div>
+    <div class="code">CDK</div>
+    <div class="rule"></div>
+    <div class="app-name">COMMANDDECK</div>
+    <div class="spacer-bottom"></div>
+  </div>
+  <div class="glyph-wrap">
+    <svg viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg" width="70" height="70">
+      <polygon fill="none" stroke="rgba(255,255,255,0.88)" stroke-width="1.8" points="9,1 61,1 69,9 69,61 61,69 9,69 1,61 1,9"/>
+      <polygon fill="none" stroke="rgba(255,255,255,0.20)" stroke-width="0.5" points="11,4 59,4 66,11 66,59 59,66 11,66 4,59 4,11"/>
+      <rect x="14" y="18" width="42" height="7" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.2"/>
+      <rect x="14" y="28" width="42" height="7" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.2"/>
+      <rect x="14" y="38" width="42" height="7" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.2"/>
+      <rect x="14" y="48" width="42" height="7" fill="none" stroke="rgba(255,255,255,0.5)"  stroke-width="1.0"/>
+      <circle cx="20" cy="21.5" r="1.4" fill="rgba(255,255,255,0.8)"/>
+      <circle cx="20" cy="31.5" r="1.4" fill="rgba(255,255,255,0.8)"/>
+      <circle cx="20" cy="41.5" r="1.4" fill="rgba(255,255,255,0.8)"/>
+    </svg>
+  </div>
+  <div class="corner br">APPSERV1</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const HULL_COLOR    = 0x7B22B0;
+const LINE_COLOR    = 0xe8d0ff;
+const LINE_OPACITY  = 0.80;
+const OUTLINE_THICK = 0.014;
+const ROTATE_SPEED  = 0.004;
+const EDGE_THRESH   = 10;
+
+const canvas = document.getElementById('bg-canvas');
+const btn = canvas.parentElement;
+const W = btn.offsetWidth, H = btn.offsetHeight;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(W, H);
+renderer.setClearColor(0x000000, 0);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, W / H, 0.01, 1000);
+
+const matHull = new THREE.MeshBasicMaterial({
+  color: HULL_COLOR, side: THREE.FrontSide, depthWrite: true,
+  polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 4
+});
+const matEdge = new THREE.LineBasicMaterial({ color: LINE_COLOR, transparent: true, opacity: LINE_OPACITY });
+const matOutline = new THREE.MeshBasicMaterial({
+  color: LINE_COLOR, side: THREE.BackSide, transparent: true, opacity: 0.48,
+  depthTest: true, depthWrite: false
+});
+
+function wf(mesh, group) {
+  mesh.material = matHull.clone();
+  const og = mesh.geometry.clone();
+  og.computeVertexNormals();
+  const pos = og.attributes.position, norm = og.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setXYZ(i, pos.getX(i)+norm.getX(i)*OUTLINE_THICK,
+                   pos.getY(i)+norm.getY(i)*OUTLINE_THICK,
+                   pos.getZ(i)+norm.getZ(i)*OUTLINE_THICK);
+  }
+  pos.needsUpdate = true;
+  const om = new THREE.Mesh(og, matOutline); om.renderOrder = -1; mesh.add(om);
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, EDGE_THRESH), matEdge));
+  group.add(mesh);
+}
+
+function makeWedge(width, zOuter, yBottom, zInner, yTop) {
+  // Triangular prism — ZY cross-section extruded in X
+  // Triangle: A(zOuter,yBottom), B(zOuter,yTop), C(zInner,yTop)
+  const x0 = -width/2, x1 = width/2;
+  const p = [];
+  const tri = (ax,ay,az, bx,by,bz, cx,cy,cz) => p.push(ax,ay,az, bx,by,bz, cx,cy,cz);
+  tri(x0,yBottom,zOuter,  x0,yTop,zInner,   x0,yTop,zOuter);   // front face (-x)
+  tri(x1,yBottom,zOuter,  x1,yTop,zOuter,   x1,yTop,zInner);   // back face (+x)
+  tri(x0,yBottom,zOuter,  x1,yBottom,zOuter, x1,yTop,zOuter);  // outer Z face
+  tri(x0,yBottom,zOuter,  x1,yTop,zOuter,   x0,yTop,zOuter);
+  tri(x0,yTop,zOuter,     x1,yTop,zOuter,   x1,yTop,zInner);   // top face
+  tri(x0,yTop,zOuter,     x1,yTop,zInner,   x0,yTop,zInner);
+  tri(x0,yBottom,zOuter,  x1,yBottom,zOuter, x1,yTop,zInner);  // diagonal face
+  tri(x0,yBottom,zOuter,  x1,yTop,zInner,   x0,yTop,zInner);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo);
+}
+
+function buildPiRack() {
+  const g = new THREE.Group();
+  // ── CLEAN CHASSIS ONLY — no faceplates, no detail ──
+  // Scale: 1 unit = 140.5mm  |  281×200×451mm
+  const RW=2.0, RD=1.42, RH=3.21, POST=0.13, CAP=0.235, U1=0.316;
+
+  // ── 4 corner aluminum extrusion posts ──
+  const postGeo = new THREE.BoxGeometry(POST, RH, POST);
+  [ [-1,1],[1,1],[-1,-1],[1,-1] ].forEach(([sx,sz])=>{
+    const p = new THREE.Mesh(postGeo.clone());
+    p.position.set(sx*(RW/2-POST/2), 0, sz*(RD/2-POST/2));
+    wf(p, g);
+  });
+
+  // ── Solid top cap (33mm) ──
+  const topCap = new THREE.Mesh(new THREE.BoxGeometry(RW, CAP, RD));
+  topCap.position.set(0, RH/2, 0); wf(topCap, g);
+
+  // ── Solid bottom cap ──
+  const botCap = new THREE.Mesh(new THREE.BoxGeometry(RW, CAP, RD));
+  botCap.position.set(0, -RH/2, 0); wf(botCap, g);
+
+  // ── Solid front panel ──
+  const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(RW-POST*2, RH-CAP*2, 0.04));
+  frontPanel.position.set(0, 0, RD/2-POST/2); wf(frontPanel, g);
+
+  // ── Solid back panel ──
+  const backPanel = new THREE.Mesh(new THREE.BoxGeometry(RW-POST*2, RH-CAP*2, 0.04));
+  backPanel.position.set(0, 0, -RD/2+POST/2); wf(backPanel, g);
+
+  // ── Solid side panels (acrylic) ──
+  const sideGeo = new THREE.BoxGeometry(0.04, RH-CAP*2, RD-POST*2);
+  [-1,1].forEach(sx=>{
+    const s = new THREE.Mesh(sideGeo.clone());
+    s.position.set(sx*(RW/2-POST/2), 0, 0); wf(s, g);
+  });
+
+  // ── Bridge bail handles — measured from product photos ──
+  // Arch shape: crossbar + tapered wing ramps + foot pads
+  // Height: 25.5mm | Depth: 113.5mm | Foot W: 15.2mm | Foot H: 9.9mm | Bar H: 4.3mm
+  const BD = 0.808;  // depth front-to-back (113.5mm)
+  const BW = 0.18;   // left-right width (~25mm, unchanged)
+  const BH = 0.181;  // total height above cap (25.5mm)
+  const FW = 0.108;  // foot depth each end (15.2mm)
+  const FH = 0.071;  // foot height (9.9mm)
+  const CT = 0.031;  // crossbar thickness (4.3mm)
+  const wingH = BH - CT - FH;   // 0.079u — wing ramp height
+  const baseY = RH/2 + CAP/2;   // top surface of cap
+
+  [-1, 1].forEach(sx => {
+    const hx = sx * (RW/2 - POST/2);
+
+    // Crossbar (full depth, thin bar at top)
+    const cb = new THREE.Mesh(new THREE.BoxGeometry(BW, CT, BD));
+    cb.position.set(hx, baseY + BH - CT/2, 0); wf(cb, g);
+
+    // Front foot pad
+    const ff = new THREE.Mesh(new THREE.BoxGeometry(BW, FH, FW));
+    ff.position.set(hx, baseY + FH/2, -(BD/2 - FW/2)); wf(ff, g);
+
+    // Back foot pad
+    const bf = new THREE.Mesh(new THREE.BoxGeometry(BW, FH, FW));
+    bf.position.set(hx, baseY + FH/2,  BD/2 - FW/2); wf(bf, g);
+
+    // Front wing ramp (triangle prism: foot-top → crossbar-bottom, sweeping inward)
+    const fw = makeWedge(BW, -BD/2, baseY + FH, -BD/2 + FW, baseY + BH - CT);
+    fw.position.set(hx, 0, 0); wf(fw, g);
+
+    // Back wing ramp (mirrored)
+    const bw = makeWedge(BW,  BD/2, baseY + FH,  BD/2 - FW, baseY + BH - CT);
+    bw.position.set(hx, 0, 0); wf(bw, g);
+  });
+
+  // ── Faceplates ──
+  // U1=0.316 (44.45mm), front panel z
+  const FZ = RD/2 - POST/2;
+  const FX = 0;  // centered
+  const FW2 = RW - POST*2;
+
+  // Slot 0+1: 2U black Pi panel (top of inner space)
+  const piPanel = new THREE.Mesh(new THREE.BoxGeometry(FW2, U1*2, 0.05));
+  piPanel.position.set(FX, RH/2 - CAP - U1, FZ + 0.005); wf(piPanel, g);
+
+  // 4 port-cluster bumps on Pi panel (ETH+USB suggestion)
+  const clusterW = FW2 * 0.12, clusterH = U1 * 0.55, clusterD = 0.03;
+  [-0.35, -0.12, 0.12, 0.35].forEach(ox => {
+    const cl = new THREE.Mesh(new THREE.BoxGeometry(clusterW, clusterH, clusterD));
+    cl.position.set(ox * FW2, RH/2 - CAP - U1, FZ + 0.06); wf(cl, g);
+  });
+
+  // Slots 2–3: blank 1U rails (thin horizontal strips)
+  [2, 3].forEach(s => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(FW2, 0.02, 0.03));
+    rail.position.set(FX, RH/2 - CAP - U1*2 - U1*(s-1.5), FZ + 0.005); wf(rail, g);
+  });
+
+  // Slot 4+5: vented shelf (2U, perforated look via thin box)
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(FW2, U1*2, 0.05));
+  shelf.position.set(FX, RH/2 - CAP - U1*4 - U1, FZ + 0.005); wf(shelf, g);
+
+  return g;
+}
+
+let modelRoot = buildPiRack();
+scene.add(modelRoot);
+
+// Tilt toward camera, slight Y rotation for 3/4 view
+modelRoot.rotation.set(0.28, 0.55, 0);
+
+const dist = 13.5;
+const camX = -2.8;
+camera.position.set(camX, 0, dist);
+camera.lookAt(camX, 0, 0);
+camera.near = 0.01; camera.far = 1000;
+camera.updateProjectionMatrix();
+
+canvas.classList.add('loaded');
+
+function animate() {
+  requestAnimationFrame(animate);
+  modelRoot.rotation.y += ROTATE_SPEED;
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

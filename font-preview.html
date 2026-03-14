@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FONT PREVIEW · NOSTROMO UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Space+Mono:wght@400;700&family=Nova+Mono&family=Major+Mono+Display&family=Courier+Prime:wght@400;700&family=IBM+Plex+Mono:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+  html, body { background:#07070F; color:#41ff6b; overflow-x:hidden; padding:40px 48px 60px; }
+
+  h1 { font-family:'Courier New',monospace; font-size:11px; letter-spacing:0.2em;
+    color:rgba(65,255,107,0.4); margin-bottom:40px; }
+
+  .font-block {
+    border-top:1px solid rgba(65,255,107,0.15);
+    padding:32px 0 28px;
+  }
+  .font-label {
+    font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.18em;
+    color:rgba(65,255,107,0.38); margin-bottom:18px;
+  }
+  .font-label span { color:rgba(65,255,107,0.7); }
+
+  /* sample text for each font */
+  .sample-cmd  { font-size:26px; margin-bottom:6px; }
+  .sample-resp { font-size:20px; color:rgba(180,255,210,0.65); padding-left:32px; margin-bottom:4px; }
+  .sample-sm   { font-size:14px; color:rgba(65,255,107,0.5); margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>SMARTLAB · FONT PREVIEW · NOSTROMO/ALIEN AESTHETIC</h1>
+
+<script>
+const fonts = [
+  { name:'Share Tech Mono', css:'Share Tech Mono', note:'Clean terminal mono · closest to actual Alien/Nostromo CRT typeface' },
+  { name:'VT323',           css:'VT323',           note:'Pixel CRT terminal · very retro · high character' },
+  { name:'Space Mono',      css:'Space Mono',      note:'Geometric mono · modern sci-fi · used in many film UIs' },
+  { name:'Nova Mono',       css:'Nova Mono',       note:'Rounded mono · softer · HAL 9000 feel' },
+  { name:'Major Mono Display', css:'Major Mono Display', note:'Uppercase-only geometric · very alien / architectural' },
+  { name:'IBM Plex Mono',   css:'IBM Plex Mono',   note:'Authoritative technical mono · mission control feel' },
+  { name:'Courier Prime',   css:'Courier Prime',   note:'Refined Courier · typewriter / ship log aesthetic' },
+  { name:'DM Mono',         css:'DM Mono',         note:'Clean neutral mono · modern operations interface' },
+];
+
+const body = document.body;
+fonts.forEach(f => {
+  const block = document.createElement('div');
+  block.className = 'font-block';
+  block.innerHTML = `
+    <div class="font-label">— <span>${f.name}</span> &nbsp;·&nbsp; ${f.note}</div>
+    <div class="sample-cmd"  style="font-family:'${f.css}',monospace">&gt; LOAD APPSERV1\\STB</div>
+    <div class="sample-resp" style="font-family:'${f.css}',monospace">Connection established — APPSERV1\\STB online.  Loading interface in background.</div>
+    <div class="sample-resp" style="font-family:'${f.css}',monospace;color:rgba(255,120,100,0.8)">ERR — APPSERV1\\TST — No route to host.</div>
+    <div class="sample-sm"   style="font-family:'${f.css}',monospace">ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 !@#$%^&amp;*()_+-=[]{}|;':",&lt;&gt;?/\\</div>
+  `;
+  body.appendChild(block);
+});
+</script>
+</body>
+</html>

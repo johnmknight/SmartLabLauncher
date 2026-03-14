@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MSO Button — Multi-Screen Ops</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:#07070F;
+  display:flex; align-items:center; justify-content:center; font-family:'Orbitron',monospace; }
+.monolith { position:relative; width:380px; height:470px; background:#8A1A1A;
+  border-radius:3px; overflow:hidden; cursor:pointer;
+  transition:filter 0.15s ease, transform 0.15s ease; }
+.monolith:hover { filter:brightness(1.18); transform:translateY(-3px); }
+.monolith::before { content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:rgba(255,255,255,0.22); z-index:3; }
+.monolith::after  { content:''; position:absolute; inset:0;
+  box-shadow:inset 0 0 40px rgba(0,0,0,0.35); pointer-events:none; z-index:3; }
+#bg-canvas { position:absolute; inset:0; width:100%!important; height:100%!important; z-index:1; }
+.corner { position:absolute; font-size:7px; letter-spacing:0.08em; color:rgba(255,255,255,0.42); z-index:4; }
+.tl{top:8px;left:9px;} .tr{top:8px;right:9px;} .br{bottom:8px;right:9px;}
+.over { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; pointer-events:none; }
+.code { font-size:82px; font-weight:900; letter-spacing:0.06em; color:rgba(255,255,255,0.92); line-height:1; }
+.rule { width:calc(100% - 24px); height:1px; background:rgba(255,255,255,0.18); margin:7px 0; }
+.app-name { font-size:9px; letter-spacing:0.22em; color:rgba(255,255,255,0.55); }
+.glyph-wrap { position:absolute; bottom:14px; left:14px; width:70px; height:70px; z-index:4; }
+</style>
+</head>
+<body>
+<div class="monolith">
+  <canvas id="bg-canvas"></canvas>
+  <div class="corner tl">SYS·04</div>
+  <div class="corner tr">192.168.4.148:8082</div>
+  <div class="over">
+    <div class="code">MSO</div>
+    <div class="rule"></div>
+    <div class="app-name">MARCHOG SYSTEMS OPS</div>
+  </div>
+  <div class="glyph-wrap">
+    <svg viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg">
+      <polygon fill="none" stroke="rgba(255,255,255,0.88)" stroke-width="1.8"
+        points="9,1 61,1 69,9 69,61 61,69 9,69 1,61 1,9"/>
+      <!-- three monitors: taller, thinner, stacked -->
+      <rect x="14" y="16" width="42" height="11" rx="1" fill="none"
+        stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>
+      <rect x="14" y="31" width="42" height="11" rx="1" fill="none"
+        stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>
+      <rect x="14" y="46" width="42" height="11" rx="1" fill="none"
+        stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>
+    </svg>
+  </div>
+  <div class="corner br">APPSERV1</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── Renderer ──
+const canvas = document.getElementById('bg-canvas');
+const W = canvas.parentElement.offsetWidth, H = canvas.parentElement.offsetHeight;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(W, H);
+renderer.setClearColor(0x000000, 0);
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, W/H, 0.01, 1000);
+camera.position.set(1.4, 0, 14);
+camera.lookAt(1.4, 0, 0);
+
+const HULL   = 0x8A1A1A;
+const LINES  = 0xffb0b0;
+const LO     = 0.72;   // line opacity
+const matH   = new THREE.MeshBasicMaterial({ color:HULL,
+  polygonOffset:true, polygonOffsetFactor:4, polygonOffsetUnits:4 });
+const matL   = new THREE.LineBasicMaterial({ color:LINES, transparent:true, opacity:LO });
+const matLo  = new THREE.LineBasicMaterial({ color:LINES, transparent:true, opacity:0.35 });
+const matOut = new THREE.MeshBasicMaterial({ color:LINES, side:THREE.BackSide,
+  transparent:true, opacity:0.38 });
+
+function wf(mesh, g) {
+  mesh.material = matH.clone();
+  const og = mesh.geometry.clone(); og.computeVertexNormals();
+  const p=og.attributes.position, n=og.attributes.normal;
+  for(let i=0;i<p.count;i++) p.setXYZ(i,
+    p.getX(i)+n.getX(i)*0.012, p.getY(i)+n.getY(i)*0.012, p.getZ(i)+n.getZ(i)*0.012);
+  p.needsUpdate=true;
+  mesh.add(new THREE.Mesh(og, matOut.clone()));
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry,10), matL.clone()));
+  g.add(mesh);
+}
+
+function line(pts, mat) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.Line(g, mat);
+}
+function lineSegs(pts, mat) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.LineSegments(g, mat);
+}
+
+// ── Monitor dimensions ──
+const MW=2.4, MH=1.1, MD=0.09, BZ=0.07;  // width, height, depth, bezel
+const GAP=0.12;
+// y centers: top=+1*(MH+GAP), mid=0, bot=-1*(MH+GAP)
+const yPos = [MH+GAP, 0, -(MH+GAP)];
+
+// ── Planet arc ──
+// Lower limb of planet centered above-right.
+// Arc sweeps diagonally: upper-left of top screen → lower-right of bottom screen.
+// Confirmed math: at x=-1.13 → y≈+0.88 (top screen), x=0 → y≈-0.11 (mid), x=+1.13 → y≈-0.67 (bot)
+const pR  = 5.5;
+const pCx = 3.0;
+const pCy = 4.5;
+
+function planetArcForRow(rowY) {
+  const x0 = -(MW/2 - BZ), x1 = MW/2 - BZ;
+  const y0 = rowY - (MH/2 - BZ), y1 = rowY + (MH/2 - BZ);
+  const pts = [];
+  const steps = 80;
+  for (let i=0; i<=steps; i++) {
+    const x = x0 + (x1-x0)*(i/steps);
+    const dx = x - pCx;
+    const disc = pR*pR - dx*dx;
+    if (disc < 0) continue;
+    const y = pCy - Math.sqrt(disc);  // lower limb
+    if (y < y0 || y > y1) continue;
+    pts.push(new THREE.Vector3(x, y, MD/2+0.005));
+  }
+  return pts;
+}
+
+// ── Build scene ──
+const root = new THREE.Group();
+
+yPos.forEach((yp, row) => {
+  // Monitor body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(MW, MH, MD));
+  body.position.set(0, yp, 0);
+  wf(body, root);
+
+  // Planet arc line clipped to this screen
+  const arcPts = planetArcForRow(yp);
+  if (arcPts.length > 1) {
+    const arcLine = line(arcPts, matL.clone());
+    root.add(arcLine);
+    // Soft atmosphere duplicate, dimmer and slightly offset
+    const atm = line(arcPts.map(p => new THREE.Vector3(p.x, p.y+0.06, p.z)), matLo.clone());
+    root.add(atm);
+  }
+});
+
+// ── Per-screen graphs (all line art, no canvas) ──
+
+// TOP screen — Semiotic Standard coffee glyph (Ron Cobb hot-food icon)
+// Cup body + handle + saucer + 3 steam wisps
+;(function() {
+  const yp = yPos[0];
+  const z  = MD/2 + 0.005;
+  const cx = 0, cy = yp;           // center of screen
+  const S  = 0.52;                  // scale
+
+  function seg(v, ax,ay, bx,by) { v.push(ax,ay,z, bx,by,z); }
+  function arc(pts, ox,oy, rx,ry, a0,a1, steps) {
+    for(let i=0;i<=steps;i++){
+      const a=a0+(a1-a0)*(i/steps);
+      pts.push(new THREE.Vector3(ox+Math.cos(a)*rx, oy+Math.sin(a)*ry, z));
+    }
+  }
+
+  const verts=[];
+
+  // ── Cup body: trapezoid (wider at top) ──
+  const tw=S*0.75, bw=S*0.55, ch=S*0.72;
+  const ty=cy+S*0.05, by=ty-ch;
+  seg(verts,  cx-tw/2, ty,  cx+tw/2, ty);   // top rim
+  seg(verts,  cx-bw/2, by,  cx+bw/2, by);   // bottom
+  seg(verts,  cx-tw/2, ty,  cx-bw/2, by);   // left wall
+  seg(verts,  cx+tw/2, ty,  cx+bw/2, by);   // right wall
+
+  // ── Saucer: flat ellipse arc under cup ──
+  const saucerPts=[];
+  arc(saucerPts, cx, by-S*0.06, S*0.55, S*0.10, Math.PI, 0, 24);
+  root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(saucerPts), matL.clone()));
+  // saucer rim line
+  seg(verts, cx-S*0.62, by-S*0.06, cx+S*0.62, by-S*0.06);
+
+  // ── Handle: D-shape on right side ──
+  const hPts=[];
+  const hcx=cx+tw/2, hcy=ty-ch*0.35;
+  arc(hPts, hcx+S*0.14, hcy, S*0.14, S*0.22, Math.PI*0.5, -Math.PI*0.5, 18);
+  root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hPts), matL.clone()));
+  // handle attachment lines
+  seg(verts, hcx, hcy+S*0.22, hcx+S*0.14, hcy+S*0.22);
+  seg(verts, hcx, hcy-S*0.22, hcx+S*0.14, hcy-S*0.22);
+
+  // ── Steam: 3 wavy vertical wisps ──
+  const steamXs=[-S*0.22, 0, S*0.22];
+  steamXs.forEach((sx,i)=>{
+    const steamPts=[];
+    const sb=ty+S*0.08, st=ty+S*0.52;
+    const steps=16;
+    for(let j=0;j<=steps;j++){
+      const t=j/steps;
+      const y=sb+(st-sb)*t;
+      const x=cx+sx + Math.sin(t*Math.PI*2 + i*2.1)*S*0.08;
+      steamPts.push(new THREE.Vector3(x,y,z));
+    }
+    root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(steamPts), matL.clone()));
+  });
+
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(verts),3));
+  root.add(new THREE.LineSegments(g, matL.clone()));
+})();
+
+// MID screen — waveform (sine line across)
+;(function() {
+  const yp = yPos[1];
+  const x0=-(MW/2-BZ)+0.1, x1=MW/2-BZ-0.1;
+  const cy=yp, amp=(MH/2-BZ)*0.55, steps=60;
+  const pts=[];
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    const x=x0+(x1-x0)*t;
+    const y=cy + amp*Math.sin(t*Math.PI*3.5) * Math.sin(t*Math.PI);
+    pts.push(new THREE.Vector3(x,y,MD/2+0.005));
+  }
+  root.add(line(pts, matL.clone()));
+  // center baseline
+  const bl=[new THREE.Vector3(x0,cy,MD/2+0.005), new THREE.Vector3(x1,cy,MD/2+0.005)];
+  root.add(line(bl, matLo.clone()));
+  // tick marks
+  const tv=[]; [0.25,0.5,0.75].forEach(t=>{
+    const x=x0+(x1-x0)*t;
+    tv.push(x,cy-0.05,MD/2+0.005, x,cy+0.05,MD/2+0.005);
+  });
+  const tg=new THREE.BufferGeometry();
+  tg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(tv),3));
+  root.add(new THREE.LineSegments(tg,matLo.clone()));
+})();
+
+// BOT screen — horizontal bar chart (8 rows)
+;(function() {
+  const yp = yPos[2];
+  const x0=-(MW/2-BZ)+0.08, y1=yp+(MH/2-BZ)-0.06;
+  const n=8, rh=0.065, xMax=MW-BZ*2-0.16;
+  const fills=[0.9,0.55,0.72,0.38,0.85,0.48,0.63,0.30];
+  const verts=[];
+  fills.forEach((f,i)=>{
+    const ry=y1-i*(rh+0.025);
+    const fw=xMax*f;
+    // bar outline
+    verts.push(x0,ry,MD/2+0.005,  x0+fw,ry,MD/2+0.005);             // top
+    verts.push(x0,ry-rh,MD/2+0.005,  x0+fw,ry-rh,MD/2+0.005);       // bot
+    verts.push(x0,ry,MD/2+0.005,  x0,ry-rh,MD/2+0.005);             // left
+    verts.push(x0+fw,ry,MD/2+0.005,  x0+fw,ry-rh,MD/2+0.005);       // right
+  });
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(verts),3));
+  root.add(new THREE.LineSegments(g,matL.clone()));
+})();
+
+scene.add(root);
+root.rotation.set(0.10, -0.44, 0);
+camera.position.set(-2.8, 0, 14);
+camera.lookAt(-2.8, 0, 0);
+camera.updateProjectionMatrix();
+
+function animate() { requestAnimationFrame(animate); root.rotation.y -= 0.003; renderer.render(scene,camera); }
+animate();
+</script>
+</body>
+</html>
