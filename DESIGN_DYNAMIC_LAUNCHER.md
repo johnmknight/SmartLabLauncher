@@ -1,6 +1,6 @@
 # SmartLab Launcher — Dynamic App Discovery Design
 
-## Status: DESIGN PHASE
+## Status: PHASE 1 + PHASE 2 COMPLETE — Phase 3 (Admin Mode) not started
 
 ---
 
@@ -134,7 +134,7 @@ with all fields the launcher needs.
    - App name below rule
    - Glyph: Cobb border (always) + inner SVG from `glyph_svg` (if present)
    - Canvas element for Three.js background
-   - `href` = `{origin}{route_path}`, `target="_blank"`
+   - `href` = `{app_server_url}{route_path}`, `target="_blank"`
 
 4. **Run CLI animation** — same as today, but driven by the fetched list
    instead of hardcoded `CLI_APPS` array
@@ -149,16 +149,20 @@ with all fields the launcher needs.
 - All hardcoded `<a class="monolith">` blocks
 - The `CLI_APPS` array
 - The `APP_MANIFEST` array
-- The four `initSTB()`, `initCDK()`, `initAO()`, `initMSO()` functions
-- Replaced by a single `buildButton(app)` factory + dynamic `bg_js` execution
+- Per-app CSS color vars (`--stb`, `--cdk`, `--ao`, `--mso`)
+- Replaced by a single `createButton(app)` factory + dynamic `bg_js` execution
 
 ### What stays
 - CSS (monolith styles, chrome bars, CLI overlay)
 - Audio functions (beep, softBeep, endChime)
 - CLI typing machinery (addRow, typeInto)
 - Shared Three.js helpers (makeRenderer, makeWF)
+- Legacy `initSTB()`, `initCDK()`, `initAO()`, `initMSO()` — kept as
+  LEGACY_BG fallback lookup, used when `bg_js` is null for an app
+- Legacy glyph SVGs — kept as LEGACY_GLYPHS lookup, used when
+  `glyph_svg` is null for an app
 - UTC clock, keyboard nav (adapted to dynamic key count)
-- Status polling (adapted to use fetched route_paths)
+- Status polling (uses `app_server_url + route_path` from API)
 - Container count polling
 
 ---
@@ -215,7 +219,7 @@ Proven in `anim-lab.html` with the TST test button:
 | `glyph_svg` | Render inner SVG inside Cobb border | Empty Cobb octagon (border only) |
 | `bg_js` | Execute function, show canvas | Canvas stays hidden, flat `color` shows |
 | `color` | Used as `--col` CSS var | Required field — no fallback needed |
-| `route_path` | Build href from origin + path | Button disabled / no link |
+| `route_path` | Build href from `app_server_url + route_path` | Button disabled / no link |
 
 ---
 

@@ -6,6 +6,11 @@
 
 ## DONE THIS SESSION
 
+### AO Dragon OBJ wireframe fix ✅
+- `buildWireframe()` was calling `c.add()` inside `obj.traverse()` → infinite
+  recursion → stack overflow
+- Fix: collect meshes into array first, then process separately
+
 ### Dynamic app rendering from CommandDeck API ✅
 - Launcher fetches `GET /deck/api/apps` on boot — all buttons, CLI lines, glyphs,
   and backgrounds built from response
@@ -22,12 +27,20 @@
 - `migrate_db()`: adds route_path, glyph_svg, bg_js, is_deployed, sort_order columns
 - Inserts SmartToolbox + CommandDeck as projects (missing from original seed)
 - Sets launcher palette colors and correct ports for all 4 deployed apps
-- `GET /api/apps`: returns deployed apps ordered by sort_order
+- `GET /api/apps`: returns `{ app_server_url, apps[] }` ordered by sort_order
 - `PATCH /api/projects/{pid}`: supports all fields including new launcher columns
+- `APP_SERVER_URL` env var via python-dotenv — no hardcoded IPs in launcher
+- `.env.example` and `smartlab-infra/.env.commanddeck.example` updated
+
+### Button URL fix ✅
+- All button hrefs built from `app_server_url + route_path` (from API)
+- Status polling and container count also use `app_server_url`
+- No hardcoded IPs anywhere in the launcher — CommandDeck is single source of truth
+- `CDK_BASE` handles local dev API access (localhost:8090) vs production (nginx /deck/)
 
 ---
 
-## DONE THIS SESSION
+## PRIOR SESSION
 
 ### index.html — Full Production Launcher ✅
 Merged from `index.html` (functional) + `anim-lab.html` (animation lab).

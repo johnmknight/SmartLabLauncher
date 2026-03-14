@@ -27,6 +27,7 @@
 - ✅ Dynamic app rendering — all buttons now built from CommandDeck API, no hardcoded HTML
 - ✅ TST dummy button — no longer an issue, buttons are API-driven
 - ✅ Animation sequence integrated — CLI boot + button reveal both driven by API data
+- ✅ Button URLs — no hardcoded IPs; `app_server_url` from CommandDeck API drives all hrefs, status polling, and container count
 
 ### OPEN
 - [ ] Container count hardcoded "— CONTAINERS" until CDK API responds
