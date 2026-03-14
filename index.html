@@ -104,7 +104,8 @@
   /* Three.js bg canvas */
   .monolith .btn-bg-canvas {
     position:absolute; inset:0; width:100%!important; height:100%!important;
-    z-index:0; opacity:0; transition:opacity 1.4s ease; }
+    z-index:0; opacity:0; transition:opacity 1.4s ease;
+    pointer-events:none; }
   .monolith .btn-bg-canvas.show { opacity:1; }
 
   .monolith-inner { display:flex; flex-direction:column; align-items:center;
@@ -157,7 +158,7 @@
 
   <!-- STB -->
   <a class="monolith" id="btn-stb" style="--col:var(--stb)"
-     href="http://192.168.4.148/toolbox/" target="_blank" data-key="1">
+     href="#" target="_blank" data-key="1">
     <canvas class="btn-bg-canvas" id="bg-stb"></canvas>
     <div class="corner tl">SYS&middot;01 <span class="status-dot unknown" id="dot-stb">●</span></div>
     <div class="corner tr">:8091</div>
@@ -180,7 +181,7 @@
 
   <!-- CDK -->
   <a class="monolith" id="btn-cdk" style="--col:var(--cdk)"
-     href="http://192.168.4.148/deck/" target="_blank" data-key="2">
+     href="#" target="_blank" data-key="2">
     <canvas class="btn-bg-canvas" id="bg-cdk"></canvas>
     <div class="corner tl">SYS&middot;02 <span class="status-dot unknown" id="dot-cdk">●</span></div>
     <div class="corner tr">:8090</div>
@@ -204,7 +205,7 @@
 
   <!-- AO -->
   <a class="monolith" id="btn-ao" style="--col:var(--ao)"
-     href="http://192.168.4.148/artemis/" target="_blank" data-key="3">
+     href="#" target="_blank" data-key="3">
     <canvas class="btn-bg-canvas" id="bg-ao"></canvas>
     <div class="corner tl">SYS&middot;03 <span class="status-dot unknown" id="dot-ao">●</span></div>
     <div class="corner tr">:8085</div>
@@ -228,7 +229,7 @@
 
   <!-- MSO -->
   <a class="monolith" id="btn-mso" style="--col:var(--mso)"
-     href="http://192.168.4.148/marchog/" target="_blank" data-key="4">
+     href="#" target="_blank" data-key="4">
     <canvas class="btn-bg-canvas" id="bg-mso"></canvas>
     <div class="corner tl">SYS&middot;04 <span class="status-dot unknown" id="dot-mso">●</span></div>
     <div class="corner tr">:8082</div>
@@ -458,13 +459,31 @@ async function runCLI() {
   sessionStorage.setItem('hal71-booted', '1');
 }
 
+// ── App manifest — URLs built from serving host at runtime ──
+// All paths are nginx reverse-proxy routes on the same host as the launcher.
+// Never hardcode an IP — the launcher always points to the machine serving it.
+const APP_MANIFEST = [
+  { id:'btn-stb', dot:'dot-stb', path:'/toolbox/'  },
+  { id:'btn-cdk', dot:'dot-cdk', path:'/deck/'     },
+  { id:'btn-ao',  dot:'dot-ao',  path:'/artemis/'  },
+  { id:'btn-mso', dot:'dot-mso', path:'/marchog/'  },
+];
+
+function buildURLs() {
+  const base = window.location.origin; // e.g. "http://192.168.4.148"
+  APP_MANIFEST.forEach(app => {
+    const btn = document.getElementById(app.id);
+    if (btn) btn.href = base + app.path;
+    app.url = base + app.path; // used by status polling
+  });
+}
+
 // ── Boot entry point ──
 window.addEventListener('DOMContentLoaded', () => {
+  buildURLs(); // always runs first — sets hrefs before anything is clickable
   if (sessionStorage.getItem('hal71-booted')) {
-    // Already booted this session — skip straight to buttons
     document.getElementById('cli').style.display = 'none';
-    revealButtons(true);
-    initAllBackgrounds();
+    revealButtons(true); // calls initAllBackgrounds() internally
   } else {
     runCLI();
   }
@@ -480,13 +499,8 @@ function updateClock() {
 }
 updateClock(); setInterval(updateClock, 1000);
 
-// ── Status polling ──
-const STATUS_APPS = [
-  { dot:'dot-stb', btn:'btn-stb', url:'http://192.168.4.148/toolbox/' },
-  { dot:'dot-cdk', btn:'btn-cdk', url:'http://192.168.4.148/deck/' },
-  { dot:'dot-ao',  btn:'btn-ao',  url:'http://192.168.4.148/artemis/' },
-  { dot:'dot-mso', btn:'btn-mso', url:'http://192.168.4.148/marchog/' },
-];
+// ── Status polling — uses URLs set by buildURLs() via APP_MANIFEST ──
+const STATUS_APPS = APP_MANIFEST; // same objects, .url set at runtime by buildURLs()
 
 function setDot(dotId, btnId, state) {
   const dot = document.getElementById(dotId);
@@ -516,7 +530,7 @@ async function updateContainerCount() {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch('http://192.168.4.148/deck/api/containers', { signal:ctrl.signal });
+    const r = await fetch(window.location.origin + '/deck/api/containers', { signal:ctrl.signal });
     if (r.ok) {
       const data = await r.json();
       const running = Array.isArray(data)
@@ -556,6 +570,7 @@ document.querySelectorAll('.monolith').forEach(el =>
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script>
 // ── Shared Three.js helpers ──
 function makeRenderer(canvas) {
@@ -661,57 +676,48 @@ function initCDK(canvas) {
 </script>
 
 <script>
-// ── AO: Dragon capsule — procedural, no external file dependency ──
+// ── AO: SpaceX Dragon OBJ ──
 function initAO(canvas) {
-  const scene=new THREE.Scene(), wf=makeWF(0x1A5C8A, 0xe8f4ff);
+  const scene=new THREE.Scene();
   const r=makeRenderer(canvas);
   const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
-  const cam=new THREE.PerspectiveCamera(38,W/H,0.01,1000);
-  cam.position.set(0.4,0.2,9); cam.lookAt(0,0,0); cam.updateProjectionMatrix();
-  const root=new THREE.Group(); scene.add(root);
-
-  // Crew capsule body (truncated cone → use CylinderGeometry with two radii)
-  const capsule=new THREE.Mesh(new THREE.CylinderGeometry(0.72,0.90,1.80,16));
-  capsule.position.set(0,1.05,0); wf(capsule,root);
-
-  // Nose cone (pointed top)
-  const nose=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.72,0.80,16));
-  nose.position.set(0,2.35,0); wf(nose,root);
-
-  // Nose tip sphere
-  const tip=new THREE.Mesh(new THREE.SphereGeometry(0.10,8,8));
-  tip.position.set(0,2.78,0); wf(tip,root);
-
-  // Trunk section (unpressurized, wider cylinder)
-  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.92,0.92,1.60,16));
-  trunk.position.set(0,-0.65,0); wf(trunk,root);
-
-  // Bottom heat shield (flat disk)
-  const shield=new THREE.Mesh(new THREE.CylinderGeometry(0.94,0.94,0.12,16));
-  shield.position.set(0,-1.52,0); wf(shield,root);
-
-  // Solar panels (two flat rectangles, trunk-mounted)
-  [1,-1].forEach(side=>{
-    const panel=new THREE.Mesh(new THREE.BoxGeometry(2.40,0.06,0.70));
-    panel.position.set(side*1.80,-0.65,0);
-    panel.rotation.z=side*Math.PI*0.04;
-    wf(panel,root);
-    // Panel support strut
-    const strut=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.70));
-    strut.position.set(side*0.96,-0.65,0); wf(strut,root);
-  });
-
-  // Draco thrusters — 8 small bumps around trunk equator
-  for(let i=0;i<8;i++){
-    const a=i/8*Math.PI*2;
-    const t=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.22));
-    t.position.set(Math.cos(a)*1.02,-0.65,Math.sin(a)*1.02);
-    t.rotation.y=-a; wf(t,root);
+  const cam=new THREE.PerspectiveCamera(45,W/H,0.01,10000);
+  const HULL=0x1A5C8A, LINE=0xe8f4ff;
+  const matH=new THREE.MeshBasicMaterial({color:HULL,polygonOffset:true,polygonOffsetFactor:4,polygonOffsetUnits:4});
+  const matE=new THREE.LineBasicMaterial({color:LINE,transparent:true,opacity:0.7});
+  const matO=new THREE.MeshBasicMaterial({color:LINE,side:THREE.BackSide,transparent:true,opacity:0.6,depthTest:true,depthWrite:false});
+  let modelRoot=null;
+  function buildWireframe(obj) {
+    // Collect meshes FIRST — adding children during traverse causes infinite recursion
+    const meshes=[];
+    obj.traverse(c=>{ if(c.isMesh) meshes.push(c); });
+    meshes.forEach(c=>{
+      c.material=matH.clone();
+      const og=c.geometry.clone(); og.computeVertexNormals();
+      const p=og.attributes.position,n=og.attributes.normal;
+      for(let i=0;i<p.count;i++) p.setXYZ(i,p.getX(i)+n.getX(i)*0.016,p.getY(i)+n.getY(i)*0.016,p.getZ(i)+n.getZ(i)*0.016);
+      p.needsUpdate=true;
+      c.add(new THREE.Mesh(og,matO.clone()));
+      c.add(new THREE.LineSegments(new THREE.EdgesGeometry(c.geometry,9),matE.clone()));
+    });
   }
-
-  root.rotation.set(0.18,0.35,0.05);
-  root.scale.setScalar(0.88);
-  (function animate(){ requestAnimationFrame(animate); root.rotation.y+=0.004; r.render(scene,cam); })();
+  function fitCamera(obj) {
+    obj.rotation.set(0,0,Math.PI/2); obj.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(obj);
+    const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+    const maxDim=Math.max(size.x,size.y,size.z);
+    const fov=cam.fov*(Math.PI/180),dist=(maxDim/(2*Math.tan(fov/2)))*2.2;
+    const camX=center.x-maxDim*0.65;
+    cam.position.set(camX,center.y,center.z+dist); cam.lookAt(camX,center.y,center.z);
+    cam.near=dist*0.001; cam.far=dist*100; cam.updateProjectionMatrix();
+  }
+  (function animate(){ requestAnimationFrame(animate); if(modelRoot) modelRoot.rotation.y+=0.004; r.render(scene,cam); })();
+  fetch('dragon.obj')
+    .then(res=>{ if(!res.ok) throw new Error(res.status); return res.arrayBuffer(); })
+    .then(buf=>{ const text=new TextDecoder().decode(buf);
+      modelRoot=new THREE.OBJLoader().parse(text);
+      scene.add(modelRoot); fitCamera(modelRoot); buildWireframe(modelRoot); })
+    .catch(e=>console.warn('dragon.obj fetch failed:',e));
 }
 
 // ── MSO: Monitor stack ──
