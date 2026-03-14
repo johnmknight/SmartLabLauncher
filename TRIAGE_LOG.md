@@ -6,7 +6,7 @@
 
 ## STB — SmartToolbox (http://192.168.4.148/toolbox/)
 
-### Status: FIXED — awaiting deploy
+### Status: DEPLOYED AND VERIFIED ✅
 
 **Symptom:** Page loads (200) but shows "SERVER OFFLINE", "0 UNITS",
 "NO BOXES DETECTED". Database has 7 boxes (confirmed via direct API call).
@@ -42,6 +42,16 @@ Server-rendered pages:
 
 **Verified:** Zero remaining hardcoded root-relative fetch calls.
 **Deploy needed:** Push to GitHub → GH Actions ARM64 build → pull on appserv1.
+
+**Deployed:** GH Actions Run #2 (43s build), pulled and restarted on appserv1.
+
+**Verified on production:**
+- SERVER ONLINE ✅ (was SERVER OFFLINE)
+- API detection: `/toolbox` ✅
+- Boxes rendering with data (racks, categories, inventory) ✅
+- Nav links prefixed correctly ✅
+- Remaining edge: `/box/{box_id}` links from box cards still root-relative
+  (generated in JS render loop, not caught by nav link fixer)
 
 ---
 
