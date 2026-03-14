@@ -1,89 +1,75 @@
 # SmartLabLauncher — PRODUCTION QUEUE
 
-## Status: Animation lab complete. Wiring phase next.
+## Status: FINAL APP BUILT ✅
 
 ---
 
 ## DONE THIS SESSION
 
-### index.html — Functional Launcher ✅
-- 380px wide buttons (STB, CDK, AO, MSO)
-- Status polling via fetch HEAD (30s interval), green/red/grey dots
-- Keyboard nav 1-4 (first press highlights, second press navigates)
-- Offline state: dimmed + diagonal hatch overlay via CSS pseudo-element
+### index.html — Full Production Launcher ✅
+Merged from `index.html` (functional) + `anim-lab.html` (animation lab).
+
+**Boot sequence:**
+- First load this session: full CLI boot animation (HAL71 interface, keyboard sounds, end chime)
+- sessionStorage flag (`hal71-booted`) — skips animation on page reload, instant button reveal
+- [ SKIP ] button available during CLI phase
+- CLI fades to black → buttons reveal L→R with soft beep per button
+- Glyphs, codes, app names, corner text fade in sequence
+- Three.js 3D backgrounds fire after all content visible
+
+**Buttons (production, TST removed):**
+- STB — SmartToolbox :8091 (cobalt)
+- CDK — CommandDeck :8090 (violet)
+- AO  — ArtemisOps  :8085 (teal)
+- MSO — MarchogSysOps :8082 (crimson)
+- All are `<a>` tags → open in `target="_blank"`, launcher stays open
+
+**Three.js backgrounds:**
+- STB: Ammo can wireframe (navy hull, ice-blue edges)
+- CDK: Pi rack wireframe (violet hull, lavender edges)
+- AO: SpaceX Dragon OBJ (teal hull, ice-blue edges) — loads async via fetch('dragon.obj')
+- MSO: Monitor stack with coffee glyph / waveform / bar chart overlays
+
+**Live data:**
 - UTC clock (1s interval)
-- Container count (polls CDK API /deck/api/containers, 60s interval)
-- Share Tech Mono font (Orbitron kept for button codes)
-- TST dummy button (offline hatch demo, removed from prod)
+- Status dots (30s poll, HEAD + no-cors)
+- Container count (60s poll, CDK /deck/api/containers)
+- Keyboard nav 1–4 (first press highlights, second press navigates)
+- Offline state: brightness(0.35) + diagonal hatch overlay
 
-### anim-lab.html — Animation Lab ✅
-Full boot sequence:
-1. CLI phase (Share Tech Mono, CRT scanlines + phosphor glow on CLI only)
-   - LOAD APPSERV1\{STB,CDK,AO,MSO,TST} commands typed out
-   - Per-character keyboard click sounds (filtered noise burst, 180-300Hz)
-   - System responses typed out (connection established / ERR)
-   - Bare > prompt with blinking cursor
-   - "HAL71 Interface Loaded.." end response
-   - End chime (two-tone sine chord 520/780Hz)
-   - [ SKIP ] button to bypass CLI instantly
-2. CLI fades to black (0.8s)
-3. Button phase — color blocks fade in L→R (620ms each, soft beep per button)
-4. All glyphs appear simultaneously
-5. All codes + app names fade in (codes fast 0.5s, names slow 1.2s)
-6. All corner text fades in (1.2s)
-7. All Three.js backgrounds fire simultaneously (1.4s fade-in)
-8. [ REPLAY ] resets everything
-
-### Three.js Backgrounds ✅
-- STB: Ammo can (procedural, exact geometry from experiment, scale 0.55)
-- CDK: Pi rack (full geometry incl. handles, faceplates, side panels, camX -2.8)
-- AO: SpaceX Dragon OBJ (dragon.obj fetched, OBJLoader, auto-fit camera)
-- MSO: 3× stacked monitors + coffee glyph (top) + waveform (mid) + bar chart (bot)
-- TST: No background (open Cobb border glyph = no-icon fallback)
-
-### Visual Design
-- Offline hatch: CSS repeating-linear-gradient -45deg, brightness 0.35
-- Corner text: 13px, 0.75 opacity, Share Tech Mono
-- App name: 13px, 1.2s fade
-- Glyph wrap: z-index 3, position absolute (not relative — fixed alignment bug)
-- bg canvas: z-index 0, opacity 0 → 1 transition
+**Fonts:**
+- Share Tech Mono (chrome, CLI, app names, corners)
+- Orbitron 900 (button codes only — 82px)
+- Both loaded via Google Fonts (CDN, requires internet on first load)
 
 ---
 
-## NEXT — WIRING PHASE
+## OPEN — NEXT PRIORITIES
 
-### Phase 1: Architecture (index.html)
-- [ ] Replace hardcoded app list with dynamic fetch from appserv1
-- [ ] API endpoint: GET /deck/api/apps (or equivalent) → returns app manifest
-- [ ] App manifest schema: { id, code, name, url, port, hasIcon, color }
-- [ ] If hasIcon=false → use open Cobb border glyph fallback
-- [ ] Status polling uses manifest URLs
+### Critical
+- [ ] Self-host Orbitron + Share Tech Mono woff2 in fonts/ for LAN/offline use
+- [ ] dragon.obj: nginx must serve from SmartLabLauncher static root at /launcher/dragon.obj
+- [ ] Status polling: no-cors opaque responses always look "online" — need CORS /health endpoint per app OR a SmartLab proxy endpoint
 
-### Phase 2: Boot Animation Integration
-- [ ] Move CLI + animation sequence into index.html
-- [ ] CLI runs on first load only (sessionStorage flag to skip on reload)
-- [ ] Or: always run on fresh load, skip on back-navigation
-- [ ] Animation sequence wired to real app manifest data
+### Nice to Have
+- [ ] Status dot: pulse animation while polling in-flight
+- [ ] Hover: subtle scale(1.02) in addition to brightness
+- [ ] Keyboard nav: visual ring more prominent (current: 2px box-shadow)
+- [ ] GitHub repo: `johnmknight/smartlab-launcher` — push current state
 
-### Phase 3: Three.js Background Integration
-- [ ] Move experiment HTML backgrounds into index.html inline
-- [ ] Each .monolith gets its bg canvas initialized after button reveal
-- [ ] dragon.obj served from nginx static or inline as data URI
-
-### Phase 4: Polish
-- [ ] Hover state: brightness already works, consider subtle scale
-- [ ] Active/focused state ring (keyboard nav)
-- [ ] Status dot animation: pulse on polling, solid when confirmed
-- [ ] Bottom chrome: live container count from CDK API
+### Infrastructure
+- [ ] nginx: serve SmartLabLauncher at /launcher/ (currently served ad-hoc)
+- [ ] App manifest API: GET /deck/api/apps → returns {id, code, name, url, port, color} for dynamic buttons
+- [ ] If manifest defined: replace hardcoded buttons with manifest-driven render
 
 ---
 
 ## FILES
 
-| File | Location | Status |
-|------|----------|--------|
-| index.html | SmartLabLauncher/ | Functional, no animation yet |
-| anim-lab.html | SmartLabLauncher/ | Complete animation lab |
-| font-preview.html | SmartLabLauncher/ | Reference, keep |
-| dragon.obj | SmartLabLauncher/ | AO background model |
-| concepts/ | SmartLabLauncher/concepts/ | Experiment saves |
+| File | Status |
+|------|--------|
+| index.html | ✅ FINAL — merged boot animation + functional launcher |
+| anim-lab.html | Keep — reference / sandbox |
+| font-preview.html | Keep — reference |
+| dragon.obj | Present — needs nginx static serving |
+| concepts/ | Reference — keep |
