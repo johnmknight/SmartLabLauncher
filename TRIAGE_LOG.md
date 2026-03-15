@@ -1,6 +1,7 @@
 # SmartLab Production Triage Log
 
 ## Date: 2026-03-14
+## Status: ALL APPS FIXED, DEPLOYED, AND VERIFIED ✅
 
 ---
 
@@ -8,91 +9,93 @@
 
 ### Status: DEPLOYED AND VERIFIED ✅
 
-**Symptom:** Page loads (200) but shows "SERVER OFFLINE", "0 UNITS",
-"NO BOXES DETECTED". Database has 7 boxes (confirmed via direct API call).
-
-**Root cause:** `const API = ''` on line 957 of `client/index.html`.
-All fetch calls use `${API}/api/boxes/` which resolves to the root-absolute
-path `/api/boxes/`. Behind nginx at `/toolbox/`, this should be
-`/toolbox/api/boxes/`. The fetch 404s, catch block calls
-`setServerStatus(false)`, UI shows "SERVER OFFLINE".
-
-**Three broken layers:**
-1. API calls — root-relative `/api/...` misses nginx `/toolbox/` prefix (404)
-2. Nav links — all root-relative (`/`, `/testing`, `/client/labels.html`,
-   `/provision`, `/m`) — click navigates to wrong URL
-3. Other client pages — `racks.html` (8 fetches), `testing.html` (3 fetches),
-   `labels.html` (2 fetches) all hardcode `/api/...` paths
+**Root cause:** All fetch calls used root-relative `/api/...` paths that fail
+behind nginx reverse proxy at `/toolbox/`.
 
 **Fix:** Auto-detect reverse proxy prefix from URL at runtime.
-Apply to all 4 client HTML files. Fix nav links with JS on load.
+Commits: `41fa650` (4 static client files) + `50e4a25` (3 server-rendered pages).
+7 files fixed, zero remaining hardcoded root-relative fetch calls.
 
-**Files fixed (2 commits: 41fa650 + 50e4a25):**
-
-Static client files:
-- `client/index.html` — API detection + nav links + all fetches via `${API}`
-- `client/testing.html` — API detection + nav links + 3 fetch calls
-- `client/racks.html` — API detection + nav links + 8 fetch calls
-- `client/labels.html` — API detection + nav links + 2 fetch calls
-
-Server-rendered pages:
-- `server/routes/mobile.py` — API detection + nav links + 1 fetch call
-- `server/routes/rfid.py` — API detection + nav links + 1 fetch call
-- `server/routes/box_detail.py` — API detection + nav/img links + 7 fetch calls
-
-**Verified:** Zero remaining hardcoded root-relative fetch calls.
-**Deploy needed:** Push to GitHub → GH Actions ARM64 build → pull on appserv1.
-
-**Deployed:** GH Actions Run #2 (43s build), pulled and restarted on appserv1.
-
-**Verified on production:**
-- SERVER ONLINE ✅ (was SERVER OFFLINE)
-- API detection: `/toolbox` ✅
-- Boxes rendering with data (racks, categories, inventory) ✅
-- Nav links prefixed correctly ✅
-- Remaining edge: `/box/{box_id}` links from box cards still root-relative
-  (generated in JS render loop, not caught by nav link fixer)
+**Deployed:** GH Actions ARM64 build → pulled on appserv1.
+**Verified:** SERVER ONLINE, 7 boxes, racks, categories, nav links all working.
 
 ---
 
 ## CDK — CommandDeck (http://192.168.4.148/deck/)
 
-### Status: DEPLOYED (new API) — reverse proxy fix needed
+### Status: DEPLOYED AND VERIFIED ✅
 
-- Page loads (200), `/api/projects` returns 8 items
-- `/api/apps` returns 404 — expected, running old Docker image
-- New code (migrate_db, /api/apps, APP_SERVER_URL) not yet deployed
-- Fix: rebuild image, push to ghcr.io, pull on appserv1
+**Root cause:** Same reverse proxy issue — `api.js` had root-relative `/api/...`
+paths, WebSocket used `location.host/ws`, HTML files had `/static/...` paths.
+
+**Fix:** Added `BASE` detection in `api.js`, prepended to all get/post/patch +
+WebSocket URL. Added `<base>` tag script to both HTML files. Relative CSS/JS paths.
+Commit: `42185f1` — 4 files (api.js, dashboard.js, index.html, project.html).
+
+**New infrastructure:** Created GH Actions workflow, `.dockerignore`, added
+`python-dotenv` to requirements. `/api/apps` endpoint returns `app_server_url`
+and all 4 deployed apps. `.env.commanddeck` updated with `APP_SERVER_URL`.
+
+**Deploy pattern:** Switched to build-on-Pi (git clone → docker build → compose up).
+**Verified:** 8 project cards, all API calls 200, BOARD/RESUME/LAUNCH buttons work.
 
 ---
 
 ## AO — ArtemisOps (http://192.168.4.148/artemis/)
 
-### Status: NOT TRIAGED
+### Status: DEPLOYED AND VERIFIED ✅
 
-- Page loads (200)
-- Likely same reverse proxy URL issue as STB
-- Needs investigation
+**Root cause:** Same reverse proxy issue, spread across shell + tab iframes.
+Additional issues: server serves `index-shell.html` (not `index.html`),
+iframe `src` attributes used absolute `/tabs/...` paths, `API_BASE` used
+`location.origin` without proxy prefix, inner tracking iframes used `/mockups/...`.
+
+**Fix:** Created `ao-base.js` with monkey-patched `window.fetch` that auto-prepends
+proxy prefix to all root-relative URLs. Added to shell + all 9 tab files.
+Fixed WebSocket URL, `API_BASE`, iframe srcs, script paths.
+Commits: `c22dec4`, `8f210be`, `3ee17d8` — 15 files total.
+
+**Verified:** Countdown timer, NASA logo, launch details, mission status, news ticker.
+All API calls routing through `/artemis/api/...` with 200s.
 
 ---
 
 ## MSO — MarchogSystemsOps (http://192.168.4.148/marchog/)
 
-### Status: NOT TRIAGED
+### Status: DEPLOYED AND VERIFIED ✅
 
-- Page loads (200), `/api/pages` has data, `/api/screens` returns 0 items
-- Likely same reverse proxy URL issue as STB
-- 0 screens may be expected (no physical screens registered)
-- Needs investigation
+**Root cause:** Same reverse proxy issue — fetch calls, WebSocket, manifest/icon
+hrefs, config.html template literal paths, video.html `apiBase` using `location.origin`.
+
+**Fix:** Created `mso-base.js` with monkey-patched `window.fetch`. Added to
+shell + all 9 page iframes + config.html. Fixed WebSocket URL, manifest/icon hrefs,
+template literal paths, video.html apiBase.
+Commit: `d920195` — 12 files total.
+
+**Verified:** Shell loads, `MSO_BASE="/marchog"`, fetch patched, 10 pages loaded,
+9 iframes created. Fullscreen overlay renders correctly.
 
 ---
 
-## Cross-cutting: Reverse Proxy Subpath Problem
+## Launcher (http://192.168.4.148/)
 
-ALL apps likely have the same root-relative URL issue behind nginx.
-Each app's frontend uses `/api/...` paths that resolve correctly when
-accessed directly on the app's port, but fail behind nginx where the
-app is served under a subpath (`/toolbox/`, `/deck/`, `/artemis/`, `/marchog/`).
+### Status: DEPLOYED AND VERIFIED ✅
 
-Fix pattern: detect the proxy prefix from `window.location.pathname`
-and prepend it to all API calls and nav links.
+**Dynamic rendering from CommandDeck API:** 4 buttons (STB/CDK/AO/MSO) with
+Three.js wireframe backgrounds, glyphs, palette colors, all driven by
+`GET /deck/api/apps` returning `app_server_url` and app metadata.
+
+**Infrastructure:** Static files served by nginx at root, volume-mounted
+from `/home/john/smartlab/launcher/`.
+
+---
+
+## Infrastructure Changes
+
+- **Build pattern:** Switched from GH Actions → ghcr.io to build-on-Pi
+  (git clone → docker build → docker compose up). Faster, simpler, no registry auth.
+- **Repos on appserv1:** All 4 app repos cloned at `/home/john/smartlab/`
+  (commanddeck, artemisops, marchogsystemsops, smarttoolbox)
+- **nginx:** Root location serves launcher, volume mount added for launcher dir
+- **CommandDeck:** `.env.commanddeck` has `APP_SERVER_URL=http://192.168.4.148`
+- **smartlab-infra:** Updated nginx.conf + docker-compose.yml committed
