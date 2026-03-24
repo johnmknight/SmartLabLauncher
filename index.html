@@ -13,9 +13,16 @@
     --chrome-border: rgba(255,255,255,0.10);
     --mono: 'Share Tech Mono','Courier New',monospace;
     --orb:  'Orbitron','Courier New',monospace;
-    --btn-w: 380px; --btn-h: 470px; --btn-gap: 22px;
-    --btn-radius: 3px; --code-size: 82px;
-    --glyph-size: 70px; --glyph-inset-l: 14px; --glyph-inset-b: 14px;
+    --btn-gap: 22px;
+    --btn-radius: 3px;
+    /* Dynamic values set by responsive layout system */
+    --btn-w: 380px;
+    --btn-h: 470px;
+    --code-size: 82px;
+    --glyph-size: 70px;
+    --glyph-inset-l: 14px;
+    --glyph-inset-b: 14px;
+    --small-screen: 0; /* 1 = small screen mode (text only) */
   }
   *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
   html, body { width:100%; height:100%; background:var(--bg);
@@ -70,24 +77,34 @@
   /* ── button field ── */
   #button-field {
     position:fixed; top:var(--chrome-h); bottom:var(--chrome-b);
-    left:0; right:0; display:flex; align-items:center;
-    justify-content:center; gap:var(--btn-gap); padding:0 32px;
+    left:0; right:0;
     z-index:10; opacity:0; transition:opacity 0.3s ease;
   }
   #button-field.show { opacity:1; }
 
   .monolith {
-    position:relative; width:var(--btn-w); height:var(--btn-h);
+    position:absolute; /* Changed from relative - positioned by JS */
+    width:var(--btn-w); height:var(--btn-h);
     background:var(--col); border-radius:var(--btn-radius);
     text-decoration:none; color:rgba(255,255,255,0.88);
     display:flex; flex-direction:column; align-items:center;
-    overflow:hidden; flex-shrink:0; outline:none;
-    transition:filter 0.15s ease, transform 0.15s ease;
+    overflow:hidden; outline:none;
+    transition:filter 0.15s ease, transform 0.15s ease,
+               left 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+               top 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+               width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+               height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     opacity:0;
   }
   .monolith:hover  { filter:brightness(1.18); transform:translateY(-3px); cursor:pointer; }
   .monolith:active { transform:translateY(0); filter:brightness(0.92); }
   .monolith.focused { box-shadow:0 0 0 2px rgba(255,255,255,0.55); }
+  
+  /* Small screen mode: hide Three.js backgrounds */
+  body[data-small-screen="1"] .monolith .btn-bg-canvas {
+    display: none !important;
+  }
+  
   .monolith::before { content:''; position:absolute; top:0; left:0; right:0;
     height:1px; background:rgba(255,255,255,0.22); z-index:2; }
   .monolith::after  { content:''; position:absolute; inset:0;
@@ -225,6 +242,225 @@ function endChime() {
   } catch(e) {}
 }
 
+// ── Responsive Layout System ──
+let currentLayout = null;
+let resizeDebounceTimer = null;
+
+function calculateResponsiveLayout(viewportWidth, viewportHeight) {
+  // Constants
+  const PADDING = 32;
+  const TOP_CHROME = 28;
+  const BOTTOM_CHROME = 24;
+  const GAP = 22;
+  const ASPECT_RATIO = 5/4;  // height/width
+  const MIN_WIDTH = 120;
+  const MIN_HEIGHT = 150;
+  const MAX_WIDTH = 600;
+  const MAX_HEIGHT = 750;
+  const SMALL_SCREEN_THRESHOLD = 400; // Width below this = text-only mode
+  
+  // Available space
+  const availableWidth = viewportWidth - (2 * PADDING);
+  const availableHeight = viewportHeight - TOP_CHROME - BOTTOM_CHROME;
+  
+  // Detect small screen mode
+  const isSmallScreen = viewportWidth < SMALL_SCREEN_THRESHOLD || viewportHeight < 600;
+  
+  // Layout configurations to test
+  const layouts = [
+    {name: "1x5", rows: 1, cols: 5},
+    {name: "2x3", rows: 2, cols: 3},
+    {name: "3x2", rows: 3, cols: 2},
+    {name: "5x1", rows: 5, cols: 1}
+  ];
+  
+  let bestLayout = null;
+  let bestScore = 0;
+  
+  for (let layout of layouts) {
+    // Calculate maximum button size for this layout
+    const maxWidth = (availableWidth - (layout.cols - 1) * GAP) / layout.cols;
+    const maxHeight = (availableHeight - (layout.rows - 1) * GAP) / layout.rows;
+    
+    // Apply aspect ratio constraint
+    let buttonWidth, buttonHeight, constraint;
+    
+    const heightFromWidth = maxWidth * ASPECT_RATIO;
+    if (heightFromWidth <= maxHeight) {
+      // Width-limited
+      buttonWidth = maxWidth;
+      buttonHeight = heightFromWidth;
+      constraint = "width";
+    } else {
+      // Height-limited
+      buttonHeight = maxHeight;
+      buttonWidth = buttonHeight / ASPECT_RATIO;
+      constraint = "height";
+    }
+    
+    // Apply min/max constraints
+    buttonWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, buttonWidth));
+    buttonHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, buttonHeight));
+    
+    // Recalculate to maintain aspect ratio after capping
+    if (buttonWidth === MAX_WIDTH) {
+      buttonHeight = Math.min(MAX_HEIGHT, buttonWidth * ASPECT_RATIO);
+    } else if (buttonHeight === MAX_HEIGHT) {
+      buttonWidth = Math.min(MAX_WIDTH, buttonHeight / ASPECT_RATIO);
+    }
+    
+    // Calculate score (larger buttons = better)
+    const score = buttonWidth * buttonHeight;
+    
+    // Track best layout
+    if (score > bestScore) {
+      bestScore = score;
+      bestLayout = {
+        ...layout,
+        buttonWidth,
+        buttonHeight,
+        constraint,
+        score
+      };
+    }
+  }
+  
+  // Calculate positioning
+  const gridWidth = (bestLayout.cols * bestLayout.buttonWidth) + 
+                   ((bestLayout.cols - 1) * GAP);
+  const gridHeight = (bestLayout.rows * bestLayout.buttonHeight) + 
+                    ((bestLayout.rows - 1) * GAP);
+  
+  const leftMargin = PADDING + ((availableWidth - gridWidth) / 2);
+  const topMargin = TOP_CHROME + ((availableHeight - gridHeight) / 2);
+  
+  // Generate button positions (for 5 buttons)
+  const buttons = [];
+  let buttonIndex = 0;
+  
+  for (let row = 0; row < bestLayout.rows; row++) {
+    let colsThisRow = bestLayout.cols;
+    
+    // Handle uneven grids (5 buttons in 2×3 or 3×2)
+    // Keep buttons left-aligned (no centering) to maintain grid structure
+    if (bestLayout.name === "2x3" && row === 1) {
+      colsThisRow = 2;  // Only 2 buttons in row 2, left-aligned
+    } else if (bestLayout.name === "3x2" && row === 2) {
+      colsThisRow = 1;  // Only 1 button in row 3, left-aligned
+    }
+    
+    for (let col = 0; col < colsThisRow && buttonIndex < 5; col++) {
+      const x = leftMargin + (col * (bestLayout.buttonWidth + GAP));
+      const y = topMargin + (row * (bestLayout.buttonHeight + GAP));
+      
+      buttons.push({
+        index: buttonIndex,
+        x,
+        y,
+        width: bestLayout.buttonWidth,
+        height: bestLayout.buttonHeight
+      });
+      
+      buttonIndex++;
+    }
+  }
+  
+  // Scale sizes for text/glyph based on button size
+  const scaleFactor = Math.min(bestLayout.buttonWidth / 380, bestLayout.buttonHeight / 470);
+  const codeSize = Math.max(32, Math.min(82, 82 * scaleFactor));
+  const glyphSize = Math.max(35, Math.min(70, 70 * scaleFactor));
+  
+  return {
+    layout: bestLayout.name,
+    buttonWidth: bestLayout.buttonWidth,
+    buttonHeight: bestLayout.buttonHeight,
+    gridWidth,
+    gridHeight,
+    leftMargin,
+    topMargin,
+    buttons,
+    score: bestLayout.score,
+    constraint: bestLayout.constraint,
+    isSmallScreen,
+    codeSize,
+    glyphSize
+  };
+}
+
+function applyResponsiveLayout(skipFade = false) {
+  const layout = calculateResponsiveLayout(window.innerWidth, window.innerHeight);
+  currentLayout = layout;
+  
+  // Set CSS variables
+  document.documentElement.style.setProperty('--btn-w', layout.buttonWidth + 'px');
+  document.documentElement.style.setProperty('--btn-h', layout.buttonHeight + 'px');
+  document.documentElement.style.setProperty('--code-size', layout.codeSize + 'px');
+  document.documentElement.style.setProperty('--glyph-size', layout.glyphSize + 'px');
+  document.documentElement.style.setProperty('--small-screen', layout.isSmallScreen ? '1' : '0');
+  
+  // Set body attribute for small screen mode
+  if (layout.isSmallScreen) {
+    document.body.setAttribute('data-small-screen', '1');
+  } else {
+    document.body.removeAttribute('data-small-screen');
+  }
+  
+  // Position all buttons
+  const btns = document.querySelectorAll('.monolith');
+  btns.forEach((btn, i) => {
+    if (layout.buttons[i]) {
+      const pos = layout.buttons[i];
+      btn.style.left = pos.x + 'px';
+      btn.style.top = pos.y + 'px';
+      btn.style.width = pos.width + 'px';
+      btn.style.height = pos.height + 'px';
+    }
+  });
+  
+  // Resize Three.js canvases if not in small screen mode
+  if (!layout.isSmallScreen) {
+    btns.forEach(btn => {
+      const canvas = btn.querySelector('.btn-bg-canvas');
+      if (canvas && canvas.__renderer) {
+        const width = layout.buttonWidth;
+        const height = layout.buttonHeight;
+        canvas.__renderer.setSize(width, height);
+        if (canvas.__camera) {
+          canvas.__camera.aspect = width / height;
+          canvas.__camera.updateProjectionMatrix();
+        }
+      }
+    });
+  }
+  
+  console.log(`Layout: ${layout.layout}, Buttons: ${layout.buttonWidth.toFixed(0)}×${layout.buttonHeight.toFixed(0)}px, Score: ${layout.score.toFixed(0)}, SmallScreen: ${layout.isSmallScreen}`);
+}
+
+function transitionLayout() {
+  const bf = document.getElementById('button-field');
+  
+  // Fade out
+  bf.style.opacity = '0';
+  
+  setTimeout(() => {
+    // Recalculate and apply
+    applyResponsiveLayout();
+    
+    // Fade in
+    setTimeout(() => {
+      bf.style.opacity = '1';
+    }, 100);
+  }, 300);
+}
+
+// Debounced resize handler
+window.addEventListener('resize', () => {
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(() => {
+    transitionLayout();
+  }, 150);
+});
+
 // ── CLI machinery ──
 const linesEl = document.getElementById('cli-lines');
 function addRow(isResponse) {
@@ -329,6 +565,10 @@ function buildButtons() {
 function revealButtons(instant) {
   const bf = document.getElementById('button-field');
   const btns = bf.querySelectorAll('.monolith');
+  
+  // Apply responsive layout first
+  applyResponsiveLayout();
+  
   bf.classList.add('show');
   if (instant) {
     btns.forEach(b => {
@@ -338,7 +578,11 @@ function revealButtons(instant) {
       });
       b.querySelectorAll('.corner').forEach(c => c.style.opacity = '0.75');
     });
-    initAllBackgrounds();
+    
+    // Initialize backgrounds only if not small screen
+    if (!currentLayout.isSmallScreen) {
+      initAllBackgrounds();
+    }
   }
 }
 
@@ -388,6 +632,9 @@ async function runCLI() {
   await wait(700);
   cli.style.display = 'none';
 
+  // Apply responsive layout before revealing buttons
+  applyResponsiveLayout();
+
   const btns = document.querySelectorAll('#button-field .monolith');
   document.getElementById('button-field').classList.add('show');
 
@@ -418,7 +665,10 @@ async function runCLI() {
   });
   await wait(800);
 
-  initAllBackgrounds();
+  // Initialize backgrounds only if not in small screen mode
+  if (!currentLayout || !currentLayout.isSmallScreen) {
+    initAllBackgrounds();
+  }
   sessionStorage.setItem('hal71-booted', '1');
 }
 
@@ -538,6 +788,8 @@ function makeRenderer(canvas) {
   const W = canvas.parentElement.offsetWidth, H = canvas.parentElement.offsetHeight;
   const r = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   r.setPixelRatio(window.devicePixelRatio); r.setSize(W, H); r.setClearColor(0x000000, 0);
+  // Store renderer reference for resizing
+  canvas.__renderer = r;
   return r;
 }
 function makeWF(hullColor, lineColor) {
@@ -564,6 +816,8 @@ function initSTB(canvas) {
   const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
   const cam=new THREE.PerspectiveCamera(40,W/H,0.01,1000);
   cam.position.set(-1.5,0.3,7.5); cam.lookAt(-1.5,0.3,0); cam.updateProjectionMatrix();
+  // Store camera reference for resizing
+  canvas.__camera = cam;
   const g=new THREE.Group(); scene.add(g);
   const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.4,1.2)); body.position.set(0,-0.1,0); wf(body,g);
   const lid =new THREE.Mesh(new THREE.BoxGeometry(2.3,0.22,1.25)); lid.position.set(0,0.71,0); wf(lid,g);
@@ -591,6 +845,8 @@ function initCDK(canvas) {
   const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
   const cam=new THREE.PerspectiveCamera(40,W/H,0.01,1000);
   const camX=-2.8; cam.position.set(camX,0,13.5); cam.lookAt(camX,0,0); cam.updateProjectionMatrix();
+  // Store camera reference for resizing
+  canvas.__camera = cam;
   const g=new THREE.Group(); scene.add(g);
   const RW=2.0,RD=1.42,RH=3.21,POST=0.13,CAP=0.235,U1=0.316;
   [[-1,1],[-1,-1],[1,1],[1,-1]].forEach(([sx,sz])=>{
@@ -643,6 +899,8 @@ function initAO(canvas) {
   const r=makeRenderer(canvas);
   const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
   const cam=new THREE.PerspectiveCamera(45,W/H,0.01,10000);
+  // Store camera reference for resizing
+  canvas.__camera = cam;
   const HULL=0x1A5C8A, LINE=0xe8f4ff;
   const matH=new THREE.MeshBasicMaterial({color:HULL,polygonOffset:true,polygonOffsetFactor:4,polygonOffsetUnits:4});
   const matE=new THREE.LineBasicMaterial({color:LINE,transparent:true,opacity:0.7});
@@ -688,6 +946,8 @@ function initMSO(canvas) {
   const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
   const cam=new THREE.PerspectiveCamera(38,W/H,0.01,1000);
   cam.position.set(-3.8,0,22); cam.lookAt(-3.8,0,0); cam.updateProjectionMatrix();
+  // Store camera reference for resizing
+  canvas.__camera = cam;
   const matL=new THREE.LineBasicMaterial({color:0xffb0b0,transparent:true,opacity:0.75});
   function line(pts){ const g=new THREE.BufferGeometry().setFromPoints(pts); return new THREE.Line(g,matL); }
   const MW=2.4,MH=1.1,MD=0.09,BZ=0.07,GAP=0.12;
