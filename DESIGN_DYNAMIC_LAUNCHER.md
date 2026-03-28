@@ -84,7 +84,7 @@ with all fields the launcher needs.
 
 ```json
 {
-  "app_server_url": "http://192.168.4.148",
+  "app_server_url": "http://YOUR_SERVER_IP",
   "apps": [
     {
       "id": "smarttoolbox",
@@ -101,7 +101,7 @@ with all fields the launcher needs.
 ```
 
 ### Fields
-- `app_server_url` — base URL for all production apps (e.g. `http://192.168.4.148`).
+- `app_server_url` — base URL for all production apps (e.g. `http://YOUR_SERVER_IP`).
   The launcher builds every button href as `app_server_url + route_path`.
   Stored as a configuration value in CommandDeck, not hardcoded anywhere.
 - `code` — mapped from `short_name`
@@ -303,7 +303,7 @@ in `bg_js` to eliminate the external dependency.
 
 6. **App server URL** — Returned by the API as `app_server_url`. The launcher
    never guesses or hardcodes where production apps live. CommandDeck stores
-   this as a config value (e.g. `http://192.168.4.148`) and includes it in
+   this as a config value (e.g. `http://YOUR_SERVER_IP`) and includes it in
    every `/api/apps` response. All button hrefs, status polling, and
    container count use this value. Falls back to `window.location.origin`
    if missing (which works when launcher is served by the same nginx).
