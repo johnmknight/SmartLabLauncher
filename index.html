@@ -153,7 +153,10 @@
 <!-- TOP CHROME -->
 <div id="chrome-top">
   <span>SMARTLAB &middot; LAUNCHER</span>
-  <span id="utc-clock">--:--:-- UTC</span>
+  <span style="display:flex;gap:16px;align-items:center;">
+    <span id="cfg-trigger" title="Configure launcher buttons (or press Shift+C)" onclick="openConfig()">[ CFG ]</span>
+    <span id="utc-clock">--:--:-- UTC</span>
+  </span>
 </div>
 
 <!-- CLI OVERLAY (only visible on first boot) -->
@@ -246,7 +249,7 @@ function endChime() {
 let currentLayout = null;
 let resizeDebounceTimer = null;
 
-function calculateResponsiveLayout(viewportWidth, viewportHeight) {
+function calculateResponsiveLayout(viewportWidth, viewportHeight, appCount = 5) {
   // Constants
   const PADDING = 32;
   const TOP_CHROME = 28;
@@ -258,21 +261,22 @@ function calculateResponsiveLayout(viewportWidth, viewportHeight) {
   const MAX_WIDTH = 600;
   const MAX_HEIGHT = 750;
   const SMALL_SCREEN_THRESHOLD = 400; // Width below this = text-only mode
-  
+
   // Available space
   const availableWidth = viewportWidth - (2 * PADDING);
   const availableHeight = viewportHeight - TOP_CHROME - BOTTOM_CHROME;
-  
+
   // Detect small screen mode
   const isSmallScreen = viewportWidth < SMALL_SCREEN_THRESHOLD || viewportHeight < 600;
-  
-  // Layout configurations to test
+
+  // Layout configurations to test — derived from appCount.
+  // Generates 1-row, 2-row, 3-row, and 1-column variants.
   const layouts = [
-    {name: "1x5", rows: 1, cols: 5},
-    {name: "2x3", rows: 2, cols: 3},
-    {name: "3x2", rows: 3, cols: 2},
-    {name: "5x1", rows: 5, cols: 1}
-  ];
+    {name: `1x${appCount}`,                 rows: 1,        cols: appCount},
+    {name: `2x${Math.ceil(appCount/2)}`,    rows: 2,        cols: Math.ceil(appCount/2)},
+    {name: `3x${Math.ceil(appCount/3)}`,    rows: 3,        cols: Math.ceil(appCount/3)},
+    {name: `${appCount}x1`,                 rows: appCount, cols: 1}
+  ].filter(l => l.rows * l.cols >= appCount && l.rows <= appCount);
   
   let bestLayout = null;
   let bestScore = 0;
@@ -332,27 +336,24 @@ function calculateResponsiveLayout(viewportWidth, viewportHeight) {
                     ((bestLayout.rows - 1) * GAP);
   
   const leftMargin = PADDING + ((availableWidth - gridWidth) / 2);
-  const topMargin = TOP_CHROME + ((availableHeight - gridHeight) / 2);
+  // Buttons live inside #button-field which is already positioned
+  // top:chrome-h, bottom:chrome-b — so their `top` style is relative to
+  // button-field's origin, NOT the viewport. Do NOT add TOP_CHROME again here.
+  const topMargin = ((availableHeight - gridHeight) / 2);
   
-  // Generate button positions (for 5 buttons)
+  // Generate button positions (for appCount buttons).
+  // Uneven grids: last row(s) may have fewer buttons than bestLayout.cols.
+  // Buttons stay left-aligned to maintain grid structure.
   const buttons = [];
   let buttonIndex = 0;
-  
-  for (let row = 0; row < bestLayout.rows; row++) {
-    let colsThisRow = bestLayout.cols;
-    
-    // Handle uneven grids (5 buttons in 2×3 or 3×2)
-    // Keep buttons left-aligned (no centering) to maintain grid structure
-    if (bestLayout.name === "2x3" && row === 1) {
-      colsThisRow = 2;  // Only 2 buttons in row 2, left-aligned
-    } else if (bestLayout.name === "3x2" && row === 2) {
-      colsThisRow = 1;  // Only 1 button in row 3, left-aligned
-    }
-    
-    for (let col = 0; col < colsThisRow && buttonIndex < 5; col++) {
+
+  for (let row = 0; row < bestLayout.rows && buttonIndex < appCount; row++) {
+    const colsThisRow = Math.min(bestLayout.cols, appCount - buttonIndex);
+
+    for (let col = 0; col < colsThisRow && buttonIndex < appCount; col++) {
       const x = leftMargin + (col * (bestLayout.buttonWidth + GAP));
       const y = topMargin + (row * (bestLayout.buttonHeight + GAP));
-      
+
       buttons.push({
         index: buttonIndex,
         x,
@@ -360,7 +361,7 @@ function calculateResponsiveLayout(viewportWidth, viewportHeight) {
         width: bestLayout.buttonWidth,
         height: bestLayout.buttonHeight
       });
-      
+
       buttonIndex++;
     }
   }
@@ -388,7 +389,8 @@ function calculateResponsiveLayout(viewportWidth, viewportHeight) {
 }
 
 function applyResponsiveLayout(skipFade = false) {
-  const layout = calculateResponsiveLayout(window.innerWidth, window.innerHeight);
+  const appCount = document.querySelectorAll('.monolith').length || 5;
+  const layout = calculateResponsiveLayout(window.innerWidth, window.innerHeight, appCount);
   currentLayout = layout;
   
   // Set CSS variables
@@ -491,12 +493,15 @@ async function typeInto(el, str, charDelay, withCursor) {
 </script>
 
 <script>
-// ── Global app state (populated from CommandDeck API) ──
+// ── Global app state (populated from the HomeOps launcher_manifest add-in) ──
 let APPS = [];     // array from GET /api/apps
 let APP_SERVER = ''; // base URL for production apps — set from API response
-// CommandDeck API: direct in local dev, behind nginx in production
-const CDK_BASE = (location.port === '7700' || location.port === '8090')
-  ? 'http://localhost:8090' : window.location.origin + '/deck';
+// The launcher manifest now lives in HomeOps (the backend framework), served
+// direct on :8086 with CORS enabled. Local dev: same host :8086. Production:
+// appserv1 :8086. (Previously this read CommandDeck's /deck/api/apps.)
+const MANIFEST_BASE = (location.port === '7700' || location.port === '8090' || location.port === '8086')
+  ? 'http://localhost:8086/addins/launcher_manifest'
+  : location.protocol + '//' + location.hostname + ':8086/addins/launcher_manifest';
 
 // ── Legacy glyph SVG (inner content only, no Cobb border) ──
 const LEGACY_GLYPHS = {
@@ -676,7 +681,7 @@ async function runCLI() {
 window.addEventListener('DOMContentLoaded', async () => {
   // Fetch app manifest from CommandDeck — single source of truth
   try {
-    const r = await fetch(CDK_BASE + '/api/apps');
+    const r = await fetch(MANIFEST_BASE + '/api/apps');
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
     // API returns { app_server_url, apps[] }
@@ -687,7 +692,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cli').style.display = 'flex';
     const errEl = addRow(true);
     errEl.style.color = 'rgba(255,120,100,0.85)';
-    errEl.textContent = 'ERR: Cannot reach CommandDeck API. Check that CommandDeck is running.';
+    errEl.textContent = 'ERR: Cannot reach HomeOps manifest API. Check that HomeOps is running on :8086.';
     return;
   }
 
@@ -741,7 +746,7 @@ async function updateContainerCount() {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(APP_SERVER + '/deck/api/containers', { signal:ctrl.signal });
+    const r = await fetch(MANIFEST_BASE + '/api/containers', { signal:ctrl.signal });
     if (r.ok) {
       const data = await r.json();
       const running = Array.isArray(data)
@@ -1019,6 +1024,239 @@ function initAllBackgrounds() {
     canvas.classList.add('show');
   });
 }
+</script>
+
+<!-- ════════════════ CONFIG MODE ════════════════ -->
+<style>
+  #cfg-trigger { cursor:pointer; color:var(--chrome-fg); letter-spacing:0.12em; }
+  #cfg-trigger:hover { color:var(--green); text-shadow:0 0 8px var(--glow); }
+
+  #config-overlay {
+    position:fixed; inset:0; z-index:60; display:none;
+    background:rgba(3,3,8,0.86); backdrop-filter:blur(3px);
+    align-items:center; justify-content:center; font-family:var(--mono);
+  }
+  #config-overlay.show { display:flex; }
+  #config-panel {
+    width:min(720px,92vw); max-height:84vh; overflow-y:auto;
+    background:#0b0e16; border:1px solid rgba(65,255,107,0.35);
+    box-shadow:0 0 40px rgba(65,255,107,0.12); border-radius:4px;
+    padding:20px 22px; color:rgba(255,255,255,0.85);
+  }
+  .cfg-head { display:flex; justify-content:space-between; align-items:center;
+    font-size:15px; letter-spacing:0.14em; color:var(--green);
+    text-shadow:0 0 8px var(--glow); border-bottom:1px solid rgba(255,255,255,0.1);
+    padding-bottom:10px; }
+  .cfg-close { cursor:pointer; font-size:12px; color:rgba(255,255,255,0.55); }
+  .cfg-close:hover { color:var(--green); }
+  .cfg-sub { font-size:11px; color:rgba(255,255,255,0.4); letter-spacing:0.06em;
+    margin:8px 0 14px; }
+
+  .cfg-row { display:flex; align-items:center; gap:10px; padding:8px 10px;
+    border:1px solid rgba(255,255,255,0.08); border-radius:3px; margin-bottom:6px;
+    background:rgba(255,255,255,0.02); }
+  .cfg-row.disabled { opacity:0.45; }
+  .cfg-swatch { width:14px; height:14px; border-radius:2px; flex-shrink:0;
+    border:1px solid rgba(255,255,255,0.2); }
+  .cfg-code { font-weight:bold; letter-spacing:0.08em; min-width:48px; font-size:13px; }
+  .cfg-name { flex:1; font-size:13px; color:rgba(255,255,255,0.78);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cfg-route { font-size:11px; color:rgba(255,255,255,0.4); min-width:90px; }
+  .cfg-arrows { display:flex; flex-direction:column; gap:1px; }
+  .cfg-btn { cursor:pointer; font-size:11px; padding:2px 7px; user-select:none;
+    border:1px solid rgba(255,255,255,0.15); border-radius:2px;
+    color:rgba(255,255,255,0.6); background:transparent; line-height:1.2; }
+  .cfg-btn:hover { border-color:var(--green); color:var(--green); }
+  .cfg-btn.del:hover { border-color:#ff5555; color:#ff5555; }
+  .cfg-src { font-size:9px; letter-spacing:0.1em; color:rgba(255,255,255,0.3);
+    min-width:64px; text-align:right; }
+
+  .cfg-addbox { margin-top:16px; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px; }
+  .cfg-addtitle { font-size:12px; letter-spacing:0.12em; color:var(--green); margin-bottom:10px; }
+  .cfg-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .cfg-form input { background:#05060b; border:1px solid rgba(255,255,255,0.18);
+    color:rgba(255,255,255,0.85); font-family:var(--mono); font-size:12px;
+    padding:6px 8px; border-radius:2px; }
+  .cfg-form input:focus { outline:none; border-color:var(--green); }
+  .cfg-form input#cfg-code { width:64px; text-transform:uppercase; }
+  .cfg-form input#cfg-name { width:150px; }
+  .cfg-form input#cfg-route { width:96px; }
+  .cfg-form input#cfg-port { width:74px; }
+  .cfg-form input#cfg-color { width:38px; padding:2px; height:30px; cursor:pointer; }
+  .cfg-form button { background:transparent; border:1px solid var(--green);
+    color:var(--green); font-family:var(--mono); font-size:12px; letter-spacing:0.1em;
+    padding:6px 16px; border-radius:2px; cursor:pointer; }
+  .cfg-form button:hover { background:rgba(65,255,107,0.12); text-shadow:0 0 8px var(--glow); }
+  #cfg-msg { font-size:11px; margin-top:10px; min-height:14px; letter-spacing:0.04em; }
+</style>
+
+<div id="config-overlay" onclick="if(event.target===this)closeConfig()">
+  <div id="config-panel">
+    <div class="cfg-head">
+      <span>LAUNCHER CONFIG &middot; MANIFEST</span>
+      <span class="cfg-close" onclick="closeConfig()">[ CLOSE ]</span>
+    </div>
+    <div class="cfg-sub">Source: HomeOps launcher_manifest add-in &middot; changes save &amp; apply immediately</div>
+    <div id="cfg-list"></div>
+    <div class="cfg-addbox">
+      <div class="cfg-addtitle">+ ADD BUTTON</div>
+      <div class="cfg-form">
+        <input id="cfg-code" placeholder="CODE" maxlength="5">
+        <input id="cfg-name" placeholder="Name">
+        <input id="cfg-route" placeholder="/route/">
+        <input id="cfg-port" placeholder="Port" type="number">
+        <input id="cfg-color" type="color" value="#64748B" title="Button colour">
+        <button onclick="cfgAdd()">ADD</button>
+      </div>
+      <div id="cfg-msg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════ CONFIG MODE ════════════════
+// CRUD over the HomeOps launcher_manifest add-in. All writes hit MANIFEST_BASE
+// and then re-pull the manifest so the live button field reflects the change.
+
+function cfgSetMsg(text, ok) {
+  const m = document.getElementById('cfg-msg');
+  m.textContent = text || '';
+  m.style.color = ok === false ? '#ff6b6b' : 'rgba(65,255,107,0.8)';
+}
+
+async function openConfig() {
+  document.getElementById('config-overlay').classList.add('show');
+  cfgSetMsg('');
+  await cfgLoad();
+}
+function closeConfig() {
+  document.getElementById('config-overlay').classList.remove('show');
+}
+
+// Load the full list (incl. disabled) for editing.
+async function cfgLoad() {
+  const list = document.getElementById('cfg-list');
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps/all');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    cfgRender(data.apps || []);
+  } catch (e) {
+    list.innerHTML = '<div class="cfg-sub" style="color:#ff6b6b">Cannot reach HomeOps manifest API on :8086.</div>';
+  }
+}
+
+function cfgRender(apps) {
+  const list = document.getElementById('cfg-list');
+  list.innerHTML = '';
+  apps.forEach((app, i) => {
+    const row = document.createElement('div');
+    row.className = 'cfg-row' + (app.is_deployed ? '' : ' disabled');
+    const isFirst = i === 0, isLast = i === apps.length - 1;
+    row.innerHTML = `
+      <div class="cfg-arrows">
+        <span class="cfg-btn" ${isFirst ? 'style="visibility:hidden"' : ''} data-act="up">▲</span>
+        <span class="cfg-btn" ${isLast ? 'style="visibility:hidden"' : ''} data-act="down">▼</span>
+      </div>
+      <span class="cfg-swatch" style="background:${app.color || '#64748B'}"></span>
+      <span class="cfg-code" style="color:${app.color || '#fff'}">${app.code || '—'}</span>
+      <span class="cfg-name">${app.name || ''}</span>
+      <span class="cfg-route">${app.route_path || ''}</span>
+      <span class="cfg-src">${(app.source || 'curated').toUpperCase()}</span>
+      <span class="cfg-btn" data-act="toggle">${app.is_deployed ? 'ON' : 'OFF'}</span>
+      <span class="cfg-btn del" data-act="del">DEL</span>`;
+    row.querySelector('[data-act="up"]').onclick   = () => cfgMove(apps, i, -1);
+    row.querySelector('[data-act="down"]').onclick = () => cfgMove(apps, i, 1);
+    row.querySelector('[data-act="toggle"]').onclick = () => cfgToggle(app);
+    row.querySelector('[data-act="del"]').onclick    = () => cfgDelete(app);
+    list.appendChild(row);
+  });
+}
+
+// Move = swap sort_order with the neighbour, PATCH both.
+async function cfgMove(apps, idx, dir) {
+  const other = idx + dir;
+  if (other < 0 || other >= apps.length) return;
+  const a = apps[idx], b = apps[other];
+  try {
+    await fetch(MANIFEST_BASE + '/api/apps/' + a.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sort_order: b.sort_order })
+    });
+    await fetch(MANIFEST_BASE + '/api/apps/' + b.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sort_order: a.sort_order })
+    });
+    await cfgLoad(); await reloadButtons();
+  } catch (e) { cfgSetMsg('Move failed: ' + e, false); }
+}
+
+async function cfgToggle(app) {
+  try {
+    await fetch(MANIFEST_BASE + '/api/apps/' + app.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ is_deployed: app.is_deployed ? 0 : 1 })
+    });
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg(app.name + (app.is_deployed ? ' hidden' : ' shown'));
+  } catch (e) { cfgSetMsg('Toggle failed: ' + e, false); }
+}
+
+async function cfgDelete(app) {
+  if (!confirm('Delete button "' + app.name + '"? This removes it from the manifest.')) return;
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps/' + app.id, { method:'DELETE' });
+    if (!r.ok) throw new Error(r.status);
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg('Deleted ' + app.name);
+  } catch (e) { cfgSetMsg('Delete failed: ' + e, false); }
+}
+
+async function cfgAdd() {
+  const code  = document.getElementById('cfg-code').value.trim().toUpperCase();
+  const name  = document.getElementById('cfg-name').value.trim();
+  const route = document.getElementById('cfg-route').value.trim() || '/';
+  const port  = document.getElementById('cfg-port').value.trim();
+  const color = document.getElementById('cfg-color').value;
+  if (!name || !code) { cfgSetMsg('Code and Name are required.', false); return; }
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        code, name, route_path: route, color,
+        port: port ? parseInt(port, 10) : null,
+        sort_order: document.querySelectorAll('#cfg-list .cfg-row').length,
+        is_deployed: 1, source: 'curated'
+      })
+    });
+    if (!r.ok) { const t = await r.text(); throw new Error(t || r.status); }
+    document.getElementById('cfg-code').value = '';
+    document.getElementById('cfg-name').value = '';
+    document.getElementById('cfg-route').value = '';
+    document.getElementById('cfg-port').value = '';
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg('Added ' + name);
+  } catch (e) { cfgSetMsg('Add failed: ' + e.message, false); }
+}
+
+// Re-pull the live manifest and rebuild the button field without re-running boot.
+async function reloadButtons() {
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    APP_SERVER = data.app_server_url || window.location.origin;
+    APPS = data.apps || [];
+    buildButtons();
+    revealButtons(true);
+  } catch (e) { console.error('reloadButtons failed', e); }
+}
+
+// Shift+C opens config; Esc closes it.
+document.addEventListener('keydown', e => {
+  if (e.key === 'C' && e.shiftKey) { e.preventDefault(); openConfig(); }
+  if (e.key === 'Escape') closeConfig();
+});
 </script>
 </body>
 </html>

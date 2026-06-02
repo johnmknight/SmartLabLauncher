@@ -45,26 +45,31 @@ SmartLabLauncher is a static site served at nginx root (`/`):
    ```
 5. **Changes are live immediately** (nginx serves static files, no restart needed)
 
-### Integration with CommandDeck
+### Manifest source (HomeOps)
 
-SmartLabLauncher loads app data dynamically from CommandDeck's `/api/apps` endpoint:
-- **API endpoint:** `http://192.168.4.148:8090/api/apps` (proxied via nginx at `/deck/api/apps`)
-- **Returns:** App manifest with codes, names, colors, ports, routes, glyphs
-- **Buttons generated** client-side from API response (no hardcoded apps)
+SmartLabLauncher loads app data dynamically from the HomeOps `launcher_manifest`
+add-in (HomeOps is the SmartLab backend framework on appserv1):
+- **API endpoint:** `http://192.168.4.148:8086/addins/launcher_manifest/api/apps`
+  (cross-origin from the launcher; HomeOps sends `Access-Control-Allow-Origin: *`)
+- **Returns:** `{ app_server_url, apps[] }` — codes, names, colors, ports, routes, glyphs
+- **Container counts:** `…/api/containers` (via the Docker socket HomeOps mounts)
+- **Buttons generated** client-side from the API response (no hardcoded apps)
+- **Config mode** (`[ CFG ]` button or Shift+C) does add/move/toggle/delete via
+  the add-in's CRUD endpoints — a capability CommandDeck never had.
 
-See [CommandDeck README](../CommandDeck/README.md) for database schema.
+> **Note:** This replaced CommandDeck's `/deck/api/apps`. CommandDeck was
+> decommissioned 2026-05-28; the manifest now lives in HomeOps and is editable.
 
 ## Production Apps
 
-Dynamic — loaded from CommandDeck API. Current apps:
+Dynamic — loaded from the HomeOps launcher_manifest add-in. Current apps:
 
 | Code | App | Port | Color | Route |
 |------|-----|------|-------|-------|
-| STB  | SmartToolbox | :8091 | `#1A42CC` cobalt | `/toolbox/` |
-| CDK  | CommandDeck  | :8090 | `#7B22B0` violet | `/deck/` |
-| AO   | ArtemisOps | :8085 | `#F97316` orange | `/artemis/` |
-| MSO  | MarchogSystemsOps | :8082 | `#EAB308` yellow | `/marchog/` |
-| SLNO | SmartLabNetOps | :8096 | `#8b5cf6` purple | `/netops/` |
+| CHM  | CargoHoldManager | :8091 | `#1A42CC` cobalt | `/cargo/` |
+| AO   | ArtemisOps | :8085 | `#1A5C8A` blue | `/artemis/` |
+| MSO  | MarchogSystemsOps | :8082 | `#8A1A1A` red | `/marchog/` |
+| LDL  | LEDLibris | :8088 | `#F59E0B` amber | `/libris/` |
 
 ## Stack
 
