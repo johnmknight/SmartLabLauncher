@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMARTLAB · LAUNCHER · TOUCHOPS</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@900&display=swap" rel="stylesheet">
+<style>
+  /*
+    TouchOps Lab Launcher — standalone page optimised for the touch-panel strip
+    (~1168x400, 3:1, fluid). Same HomeOps launcher_manifest infrastructure as
+    index.html, but no CLI cinematic boot and a fluid grid that fills the strip
+    and adapts 1-row / 2-rows to the app count. index.html is left untouched.
+
+    CRITICAL (see reference-display-layout): fill the viewport fluidly, never a
+    fixed-px box — html/body 100%, root container 100%, internal flex/grid zones,
+    no 100vw, no flex-centering of a fixed box. Zero overflow at any size.
+  */
+  :root {
+    --bg: #07070F; --green: #41ff6b; --glow: rgba(65,255,107,0.6);
+    --chrome-h: 26px;
+    --chrome-fg: rgba(255,255,255,0.55);
+    --chrome-border: rgba(255,255,255,0.10);
+    --mono: 'Share Tech Mono','Courier New',monospace;
+    --orb:  'Orbitron','Courier New',monospace;
+    --btn-gap: 14px;
+    --btn-radius: 3px;
+  }
+  *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:100%; height:100%; background:var(--bg);
+    color:rgba(255,255,255,0.85); font-family:var(--mono);
+    overflow:hidden; user-select:none; -webkit-user-select:none; }
+
+  /* ── thin top chrome (no bottom bar — saves vertical space on the strip) ── */
+  #chrome-top {
+    position:fixed; left:0; right:0; top:0; height:var(--chrome-h);
+    display:flex; justify-content:space-between; align-items:center;
+    padding:0 14px; background:rgba(7,7,15,0.95); z-index:20;
+    letter-spacing:0.12em; color:var(--chrome-fg); font-family:var(--mono);
+    font-size:11px; border-bottom:1px solid var(--chrome-border);
+  }
+  #chrome-top .right { display:flex; gap:16px; align-items:center; }
+  #cfg-trigger { cursor:pointer; color:var(--chrome-fg); letter-spacing:0.12em; }
+  #cfg-trigger:hover { color:var(--green); text-shadow:0 0 8px var(--glow); }
+
+  /* ── button field: fluid grid that fills the strip below the chrome ── */
+  #button-field {
+    position:fixed; top:var(--chrome-h); bottom:0; left:0; right:0;
+    display:grid; gap:var(--btn-gap); padding:14px;
+    grid-template-columns:repeat(1,1fr); grid-template-rows:repeat(1,1fr);
+    z-index:10; opacity:0; transition:opacity 0.4s ease;
+  }
+  #button-field.show { opacity:1; }
+
+  .monolith {
+    position:relative; min-width:0; min-height:0;
+    background:var(--col); border-radius:var(--btn-radius);
+    container-type:size;
+    text-decoration:none; color:rgba(255,255,255,0.88);
+    display:flex; flex-direction:column; align-items:center;
+    overflow:hidden; outline:none;
+    transition:filter 0.15s ease, transform 0.15s ease;
+  }
+  .monolith:hover  { filter:brightness(1.18); transform:translateY(-3px); cursor:pointer; }
+  .monolith:active { transform:translateY(0); filter:brightness(0.92); }
+  .monolith.focused { box-shadow:0 0 0 2px rgba(255,255,255,0.55); }
+
+  .monolith::before { content:''; position:absolute; top:0; left:0; right:0;
+    height:1px; background:rgba(255,255,255,0.22); z-index:2; }
+  .monolith::after  { content:''; position:absolute; inset:0;
+    box-shadow:inset 0 0 40px rgba(0,0,0,0.35); pointer-events:none; z-index:2; }
+
+  /* offline state */
+  .monolith.offline { filter:brightness(0.35) saturate(0.3); }
+  .monolith.offline::after { content:''; position:absolute; inset:0; z-index:6;
+    background:repeating-linear-gradient(-45deg,
+      transparent,transparent 10px,rgba(255,255,255,0.07) 10px,rgba(255,255,255,0.07) 14px);
+    pointer-events:none; }
+
+  /* Three.js bg canvas */
+  .monolith .btn-bg-canvas {
+    position:absolute; inset:0; width:100%!important; height:100%!important;
+    z-index:0; opacity:0; transition:opacity 1.4s ease; pointer-events:none; }
+  .monolith .btn-bg-canvas.show { opacity:1; }
+
+  .monolith-inner { display:flex; flex-direction:column; align-items:center;
+    justify-content:center; flex:1; width:100%; z-index:1; }
+  .corner { position:absolute; font-size:clamp(7px,3cqmin,10px); letter-spacing:0.08em;
+    color:rgba(255,255,255,0.42); font-family:var(--mono); z-index:3; }
+  .tl{top:7px;left:8px;} .tr{top:7px;right:8px;} .br{bottom:7px;right:8px;}
+  .status-dot { font-size:0.85em; }
+  .status-dot.online  { color:#3ddc84; }
+  .status-dot.offline { color:#cc3333; }
+  .status-dot.unknown { color:rgba(255,255,255,0.25); }
+
+  /* Fluid type — sized to the tile via container-query units (cqmin). */
+  .code { font-size:clamp(26px,21cqmin,66px); font-weight:900; letter-spacing:0.06em;
+    font-family:var(--orb); line-height:1; color:rgba(255,255,255,0.92);
+    text-align:center; padding:0 8px; z-index:1; }
+  .rule { width:clamp(40px,55cqmin,80%); height:1px;
+    background:rgba(255,255,255,0.18); margin:clamp(4px,2cqmin,8px) 0; flex-shrink:0; z-index:1; }
+  .app-name { font-size:clamp(9px,5cqmin,14px); letter-spacing:0.18em;
+    color:rgba(255,255,255,0.65); text-align:center; padding:0 8px; z-index:1; }
+  .glyph-wrap { position:absolute;
+    bottom:clamp(8px,4cqmin,16px); left:clamp(8px,4cqmin,16px);
+    width:clamp(36px,26cqmin,76px); height:clamp(36px,26cqmin,76px); z-index:3; }
+  .glyph-svg  { width:100%; height:100%; overflow:visible; }
+  .cobb-outer { fill:none; stroke:rgba(255,255,255,0.88); stroke-width:1.8; }
+  .cobb-inner { fill:none; stroke:rgba(255,255,255,0.20); stroke-width:0.5; }
+
+  /* error state */
+  #err { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    text-align:center; padding:24px; color:rgba(255,120,100,0.9); font-size:14px;
+    letter-spacing:0.06em; z-index:40; }
+</style>
+</head>
+<body>
+
+<!-- TOP CHROME -->
+<div id="chrome-top">
+  <span>SMARTLAB &middot; LAUNCHER</span>
+  <span class="right">
+    <span id="container-count">— CONTAINERS</span>
+    <span id="utc-clock">--:--:-- UTC</span>
+    <span id="cfg-trigger" title="Configure launcher buttons (or press Shift+C)" onclick="openConfig()">[ CFG ]</span>
+  </span>
+</div>
+
+<!-- BUTTON FIELD (populated dynamically from the HomeOps launcher_manifest add-in) -->
+<div id="button-field"></div>
+
+<div id="err">ERR: Cannot reach HomeOps manifest API. Check that HomeOps is running on :8086.</div>
+
+<script>
+// ── Global app state (populated from the HomeOps launcher_manifest add-in) ──
+let APPS = [];
+let APP_SERVER = '';
+// Same manifest source as index.html — HomeOps add-in on :8086, CORS-enabled.
+const MANIFEST_BASE = (location.port === '7700' || location.port === '8090' || location.port === '8086')
+  ? 'http://localhost:8086/addins/launcher_manifest'
+  : location.protocol + '//' + location.hostname + ':8086/addins/launcher_manifest';
+
+// ── Legacy glyph SVG (inner content only, no Cobb border) — fallback when the
+//    manifest has no glyph_svg for a code. Same set as index.html. ──
+const LEGACY_GLYPHS = {
+  STB: `<rect x="14" y="17" width="42" height="8" rx="1" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+    <rect x="14" y="31" width="42" height="8" rx="1" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+    <rect x="14" y="45" width="42" height="8" rx="1" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+    <rect x="28" y="19" width="14" height="4" rx="1" fill="rgba(255,255,255,0.3)"/>
+    <rect x="28" y="33" width="14" height="4" rx="1" fill="rgba(255,255,255,0.3)"/>
+    <rect x="28" y="47" width="14" height="4" rx="1" fill="rgba(255,255,255,0.3)"/>`,
+  CDK: `<line x1="35" y1="12" x2="35" y2="58" stroke="rgba(255,255,255,0.8)" stroke-width="1.2"/>
+    <line x1="12" y1="35" x2="58" y2="35" stroke="rgba(255,255,255,0.8)" stroke-width="1.2"/>
+    <rect x="13" y="13" width="20" height="20" fill="rgba(255,255,255,0.18)"/>
+    <rect x="37" y="13" width="20" height="20" fill="rgba(255,255,255,0.07)"/>
+    <rect x="13" y="37" width="20" height="20" fill="rgba(255,255,255,0.07)"/>
+    <rect x="37" y="37" width="20" height="20" fill="rgba(255,255,255,0.12)"/>`,
+  AO: `<ellipse cx="35" cy="38" rx="18" ry="10" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.3" stroke-dasharray="4 3"/>
+    <circle cx="35" cy="38" r="5" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.4"/>
+    <circle cx="35" cy="38" r="2" fill="rgba(255,255,255,0.7)"/>
+    <circle cx="53" cy="38" r="2.5" fill="rgba(255,255,255,0.9)"/>
+    <line x1="53" y1="41" x2="53" y2="46" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+    <path d="M 18 22 Q 35 14 52 22" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>`,
+  MSO: `<rect x="14" y="16" width="42" height="11" rx="1" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>
+    <rect x="14" y="31" width="42" height="11" rx="1" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>
+    <rect x="14" y="46" width="42" height="11" rx="1" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>`,
+};
+
+// ── Adaptive grid: 1 row when few apps, 2 rows when more, so tiles stay large
+//    on the short strip. Cols derived from count. ──
+function gridFor(n) {
+  if (n <= 0) return { rows:1, cols:1 };
+  const rows = n <= 5 ? 1 : 2;
+  const cols = Math.ceil(n / rows);
+  return { rows, cols };
+}
+function applyGrid() {
+  const bf = document.getElementById('button-field');
+  const { rows, cols } = gridFor(APPS.length);
+  bf.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+  bf.style.gridTemplateRows = `repeat(${rows},1fr)`;
+}
+
+// ── Create a monolith button element from app data (grid item) ──
+function createButton(app, index) {
+  const el = document.createElement('a');
+  el.className = 'monolith';
+  el.id = 'btn-' + app.code.toLowerCase();
+  el.style.setProperty('--col', app.color);
+  el.href = APP_SERVER + (app.route_path || '/');
+  el.target = '_blank';
+  el.dataset.key = String(index + 1);
+
+  const canvasId = 'bg-' + app.code.toLowerCase();
+  const dotId = 'dot-' + app.code.toLowerCase();
+  const innerSvg = app.glyph_svg || LEGACY_GLYPHS[app.code] || '';
+
+  el.innerHTML = `
+    <canvas class="btn-bg-canvas" id="${canvasId}"></canvas>
+    <div class="corner tl">SYS&middot;${String(index+1).padStart(2,'0')} <span class="status-dot unknown" id="${dotId}">●</span></div>
+    <div class="corner tr">:${app.port}</div>
+    <div class="monolith-inner">
+      <div class="code">${app.code}</div><div class="rule"></div>
+      <div class="app-name">${app.name.toUpperCase()}</div>
+    </div>
+    <div class="glyph-wrap"><svg class="glyph-svg" viewBox="0 0 70 70">
+      <polygon class="cobb-outer" points="9,1 61,1 69,9 69,61 61,69 9,69 1,61 1,9"/>
+      <polygon class="cobb-inner" points="11,4 59,4 66,11 66,59 59,66 11,66 4,59 4,11"/>
+      ${innerSvg}
+    </svg></div>
+    <div class="corner br">APPSERV1</div>`;
+  return el;
+}
+
+function buildButtons() {
+  const bf = document.getElementById('button-field');
+  bf.innerHTML = '';
+  APPS.forEach((app, i) => bf.appendChild(createButton(app, i)));
+  applyGrid();
+}
+
+// ── Boot entry point — no CLI cinematic; instant fade-in to buttons ──
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    APP_SERVER = data.app_server_url || window.location.origin;
+    APPS = data.apps || [];
+  } catch (e) {
+    console.error('Failed to fetch app manifest:', e);
+    document.getElementById('err').style.display = 'flex';
+    return;
+  }
+
+  buildButtons();
+  const bf = document.getElementById('button-field');
+  // double-rAF so the grid lays out before the fade-in
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bf.classList.add('show');
+    initAllBackgrounds();
+  }));
+});
+
+// ── UTC Clock ──
+function updateClock() {
+  const n = new Date(), p = v => String(v).padStart(2,'0');
+  document.getElementById('utc-clock').textContent =
+    `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())} UTC`;
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// ── Status polling — driven by APPS array ──
+function setDot(code, state) {
+  const lc = code.toLowerCase();
+  const dot = document.getElementById('dot-' + lc);
+  if (dot) dot.className = 'status-dot ' + state;
+  const btn = document.getElementById('btn-' + lc);
+  if (btn) btn.classList.toggle('offline', state === 'offline');
+}
+async function checkApp(app) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    await fetch(APP_SERVER + (app.route_path || '/'), { method:'HEAD', mode:'no-cors', signal:ctrl.signal });
+    clearTimeout(timer);
+    setDot(app.code, 'online');
+  } catch {
+    setDot(app.code, 'offline');
+  }
+}
+function pollAll() { APPS.forEach(checkApp); }
+setTimeout(pollAll, 2000);
+setInterval(pollAll, 30000);
+
+// ── Container count ──
+async function updateContainerCount() {
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(MANIFEST_BASE + '/api/containers', { signal:ctrl.signal });
+    if (r.ok) {
+      const data = await r.json();
+      const running = Array.isArray(data)
+        ? data.filter(c => c.status === 'running' || c.State === 'running').length
+        : (data.running ?? data.count ?? '?');
+      document.getElementById('container-count').textContent =
+        `${running} CONTAINER${running !== 1 ? 'S' : ''} RUNNING`;
+    }
+  } catch { /* keep placeholder */ }
+}
+updateContainerCount();
+setInterval(updateContainerCount, 60000);
+
+// ── Keyboard nav (keys 1..N) — harmless on touch panel, handy on a keyboard ──
+let focusedKey = null;
+document.addEventListener('keydown', e => {
+  const idx = parseInt(e.key) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= APPS.length) return;
+  const btnId = 'btn-' + APPS[idx].code.toLowerCase();
+  e.preventDefault();
+  document.querySelectorAll('.monolith').forEach(el => el.classList.remove('focused'));
+  if (focusedKey === e.key) {
+    window.open(document.getElementById(btnId).href, '_blank');
+    focusedKey = null;
+  } else {
+    document.getElementById(btnId).classList.add('focused');
+    focusedKey = e.key;
+  }
+});
+document.addEventListener('click', e => {
+  if (e.target.closest('.monolith')) {
+    document.querySelectorAll('.monolith').forEach(b => b.classList.remove('focused'));
+    focusedKey = null;
+  }
+});
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script>
+// ── Shared Three.js helpers (same as index.html) ──
+function makeRenderer(canvas) {
+  const W = canvas.parentElement.offsetWidth, H = canvas.parentElement.offsetHeight;
+  const r = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  r.setPixelRatio(window.devicePixelRatio); r.setSize(W, H); r.setClearColor(0x000000, 0);
+  canvas.__renderer = r;
+  return r;
+}
+function makeWF(hullColor, lineColor) {
+  const THICK = 0.016;
+  const matH = new THREE.MeshBasicMaterial({ color:hullColor, polygonOffset:true, polygonOffsetFactor:4, polygonOffsetUnits:4 });
+  const matE = new THREE.LineBasicMaterial({ color:lineColor, transparent:true, opacity:0.78 });
+  const matO = new THREE.MeshBasicMaterial({ color:lineColor, side:THREE.BackSide, transparent:true, opacity:0.50, depthTest:true, depthWrite:false });
+  return function wf(mesh, group) {
+    mesh.material = matH.clone();
+    const og=mesh.geometry.clone(); og.computeVertexNormals();
+    const p=og.attributes.position, n=og.attributes.normal;
+    for(let i=0;i<p.count;i++) p.setXYZ(i,p.getX(i)+n.getX(i)*THICK,p.getY(i)+n.getY(i)*THICK,p.getZ(i)+n.getZ(i)*THICK);
+    p.needsUpdate=true;
+    mesh.add(new THREE.Mesh(og,matO.clone()));
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry,15),matE.clone()));
+    group.add(mesh);
+  };
+}
+
+// ── STB: Ammo can ──
+function initSTB(canvas) {
+  const scene=new THREE.Scene(), wf=makeWF(0x1A42CC, 0xd0e8ff);
+  const r=makeRenderer(canvas);
+  const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
+  const cam=new THREE.PerspectiveCamera(40,W/H,0.01,1000);
+  cam.position.set(-1.5,0.3,7.5); cam.lookAt(-1.5,0.3,0); cam.updateProjectionMatrix();
+  canvas.__camera = cam;
+  const g=new THREE.Group(); scene.add(g);
+  const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.4,1.2)); body.position.set(0,-0.1,0); wf(body,g);
+  const lid =new THREE.Mesh(new THREE.BoxGeometry(2.3,0.22,1.25)); lid.position.set(0,0.71,0); wf(lid,g);
+  const ridge=new THREE.Mesh(new THREE.BoxGeometry(2.32,0.08,0.12)); ridge.position.set(0,0.85,0.56); wf(ridge,g);
+  const postGeo=new THREE.BoxGeometry(0.1,0.5,0.1);
+  const postL=new THREE.Mesh(postGeo); postL.position.set(-0.3,1.1,0); wf(postL,g);
+  const postR=new THREE.Mesh(postGeo.clone()); postR.position.set(0.3,1.1,0); wf(postR,g);
+  const bar=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.1,0.1)); bar.position.set(0,1.37,0); wf(bar,g);
+  const lx=-1.18, seamY=0.62;
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.60,0.36)); plate.position.set(lx,seamY-0.18,0); wf(plate,g);
+  const pivot=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.40)); pivot.position.set(lx,seamY+0.14,0); wf(pivot,g);
+  const levL=new THREE.Mesh(new THREE.BoxGeometry(0.10,0.44,0.07)); levL.position.set(lx,seamY-0.10,-0.15); wf(levL,g);
+  const levR=new THREE.Mesh(new THREE.BoxGeometry(0.10,0.44,0.07)); levR.position.set(lx,seamY-0.10,0.15); wf(levR,g);
+  const thumb=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.14,0.34)); thumb.position.set(lx,seamY-0.38,0); wf(thumb,g);
+  g.rotation.set(0.52,0.4,-Math.PI/2); g.scale.setScalar(0.55);
+  (function animate(){ requestAnimationFrame(animate); g.rotation.y+=0.004; r.render(scene,cam); })();
+}
+
+// ── CDK: Pi rack ──
+function initCDK(canvas) {
+  const scene=new THREE.Scene(), wf=makeWF(0x7B22B0, 0xe8d0ff);
+  const r=makeRenderer(canvas);
+  const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
+  const cam=new THREE.PerspectiveCamera(40,W/H,0.01,1000);
+  const camX=-2.8; cam.position.set(camX,0,13.5); cam.lookAt(camX,0,0); cam.updateProjectionMatrix();
+  canvas.__camera = cam;
+  const g=new THREE.Group(); scene.add(g);
+  const RW=2.0,RD=1.42,RH=3.21,POST=0.13,CAP=0.235,U1=0.316;
+  [[-1,1],[-1,-1],[1,1],[1,-1]].forEach(([sx,sz])=>{
+    const p=new THREE.Mesh(new THREE.BoxGeometry(POST,RH,POST));
+    p.position.set(sx*(RW/2-POST/2),0,sz*(RD/2-POST/2)); wf(p,g);
+  });
+  const tc=new THREE.Mesh(new THREE.BoxGeometry(RW,CAP,RD)); tc.position.set(0,RH/2,0); wf(tc,g);
+  const bc=new THREE.Mesh(new THREE.BoxGeometry(RW,CAP,RD)); bc.position.set(0,-RH/2,0); wf(bc,g);
+  const fp=new THREE.Mesh(new THREE.BoxGeometry(RW-POST*2,RH-CAP*2,0.04)); fp.position.set(0,0,RD/2-POST/2); wf(fp,g);
+  const bk=new THREE.Mesh(new THREE.BoxGeometry(RW-POST*2,RH-CAP*2,0.04)); bk.position.set(0,0,-RD/2+POST/2); wf(bk,g);
+  [-1,1].forEach(sx=>{ const s=new THREE.Mesh(new THREE.BoxGeometry(0.04,RH-CAP*2,RD-POST*2)); s.position.set(sx*(RW/2-POST/2),0,0); wf(s,g); });
+  const BD=0.808,BW=0.18,BH=0.181,FW=0.108,FH=0.071,CT=0.031, baseY=RH/2+CAP/2;
+  function makeWedge(width,zOuter,yBottom,zInner,yTop) {
+    const x0=-width/2,x1=width/2,p=[];
+    const tri=(ax,ay,az,bx,by,bz,cx,cy,cz)=>p.push(ax,ay,az,bx,by,bz,cx,cy,cz);
+    tri(x0,yBottom,zOuter,x0,yTop,zInner,x0,yTop,zOuter);
+    tri(x1,yBottom,zOuter,x1,yTop,zOuter,x1,yTop,zInner);
+    tri(x0,yBottom,zOuter,x1,yBottom,zOuter,x1,yTop,zOuter);
+    tri(x0,yBottom,zOuter,x1,yTop,zOuter,x0,yTop,zOuter);
+    tri(x0,yTop,zOuter,x1,yTop,zOuter,x1,yTop,zInner);
+    tri(x0,yTop,zOuter,x1,yTop,zInner,x0,yTop,zInner);
+    tri(x0,yBottom,zOuter,x1,yBottom,zOuter,x1,yTop,zInner);
+    tri(x0,yBottom,zOuter,x1,yTop,zInner,x0,yTop,zInner);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(p),3));
+    geo.computeVertexNormals(); return new THREE.Mesh(geo);
+  }
+  [-1,1].forEach(sx=>{
+    const hx=sx*(RW/2-POST/2);
+    const cb=new THREE.Mesh(new THREE.BoxGeometry(BW,CT,BD)); cb.position.set(hx,baseY+BH-CT/2,0); wf(cb,g);
+    const ff=new THREE.Mesh(new THREE.BoxGeometry(BW,FH,FW)); ff.position.set(hx,baseY+FH/2,-(BD/2-FW/2)); wf(ff,g);
+    const bf=new THREE.Mesh(new THREE.BoxGeometry(BW,FH,FW)); bf.position.set(hx,baseY+FH/2,BD/2-FW/2); wf(bf,g);
+    const fw=makeWedge(BW,-BD/2,baseY+FH,-BD/2+FW,baseY+BH-CT); fw.position.set(hx,0,0); wf(fw,g);
+    const bw=makeWedge(BW,BD/2,baseY+FH,BD/2-FW,baseY+BH-CT); bw.position.set(hx,0,0); wf(bw,g);
+  });
+  const FZ=RD/2-POST/2, FW2=RW-POST*2;
+  const piP=new THREE.Mesh(new THREE.BoxGeometry(FW2,U1*2,0.05)); piP.position.set(0,RH/2-CAP-U1,FZ+0.005); wf(piP,g);
+  [-0.35,-0.12,0.12,0.35].forEach(ox=>{
+    const cl=new THREE.Mesh(new THREE.BoxGeometry(FW2*0.12,U1*0.55,0.03)); cl.position.set(ox*FW2,RH/2-CAP-U1,FZ+0.06); wf(cl,g);
+  });
+  g.rotation.set(0.28,0.55,0);
+  (function animate(){ requestAnimationFrame(animate); g.rotation.y+=0.004; r.render(scene,cam); })();
+}
+
+// ── AO: SpaceX Dragon OBJ ──
+function initAO(canvas) {
+  const scene=new THREE.Scene();
+  const r=makeRenderer(canvas);
+  const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
+  const cam=new THREE.PerspectiveCamera(45,W/H,0.01,10000);
+  canvas.__camera = cam;
+  const HULL=0x1A5C8A, LINE=0xe8f4ff;
+  const matH=new THREE.MeshBasicMaterial({color:HULL,polygonOffset:true,polygonOffsetFactor:4,polygonOffsetUnits:4});
+  const matE=new THREE.LineBasicMaterial({color:LINE,transparent:true,opacity:0.7});
+  const matO=new THREE.MeshBasicMaterial({color:LINE,side:THREE.BackSide,transparent:true,opacity:0.6,depthTest:true,depthWrite:false});
+  let modelRoot=null;
+  function buildWireframe(obj) {
+    const meshes=[];
+    obj.traverse(c=>{ if(c.isMesh) meshes.push(c); });
+    meshes.forEach(c=>{
+      c.material=matH.clone();
+      const og=c.geometry.clone(); og.computeVertexNormals();
+      const p=og.attributes.position,n=og.attributes.normal;
+      for(let i=0;i<p.count;i++) p.setXYZ(i,p.getX(i)+n.getX(i)*0.016,p.getY(i)+n.getY(i)*0.016,p.getZ(i)+n.getZ(i)*0.016);
+      p.needsUpdate=true;
+      c.add(new THREE.Mesh(og,matO.clone()));
+      c.add(new THREE.LineSegments(new THREE.EdgesGeometry(c.geometry,9),matE.clone()));
+    });
+  }
+  function fitCamera(obj) {
+    obj.rotation.set(0,0,Math.PI/2); obj.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(obj);
+    const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+    const maxDim=Math.max(size.x,size.y,size.z);
+    const fov=cam.fov*(Math.PI/180),dist=(maxDim/(2*Math.tan(fov/2)))*2.2;
+    const camX=center.x-maxDim*0.65;
+    cam.position.set(camX,center.y,center.z+dist); cam.lookAt(camX,center.y,center.z);
+    cam.near=dist*0.001; cam.far=dist*100; cam.updateProjectionMatrix();
+  }
+  (function animate(){ requestAnimationFrame(animate); if(modelRoot) modelRoot.rotation.y+=0.004; r.render(scene,cam); })();
+  fetch('dragon.obj')
+    .then(res=>{ if(!res.ok) throw new Error(res.status); return res.arrayBuffer(); })
+    .then(buf=>{ const text=new TextDecoder().decode(buf);
+      modelRoot=new THREE.OBJLoader().parse(text);
+      scene.add(modelRoot); fitCamera(modelRoot); buildWireframe(modelRoot); })
+    .catch(e=>console.warn('dragon.obj fetch failed:',e));
+}
+
+// ── MSO: Monitor stack ──
+function initMSO(canvas) {
+  const scene=new THREE.Scene(), wf=makeWF(0x8A1A1A, 0xffb0b0);
+  const r=makeRenderer(canvas);
+  const W=canvas.parentElement.offsetWidth, H=canvas.parentElement.offsetHeight;
+  const cam=new THREE.PerspectiveCamera(38,W/H,0.01,1000);
+  cam.position.set(-3.8,0,22); cam.lookAt(-3.8,0,0); cam.updateProjectionMatrix();
+  canvas.__camera = cam;
+  const matL=new THREE.LineBasicMaterial({color:0xffb0b0,transparent:true,opacity:0.75});
+  function line(pts){ const g=new THREE.BufferGeometry().setFromPoints(pts); return new THREE.Line(g,matL); }
+  const MW=2.4,MH=1.1,MD=0.09,BZ=0.07,GAP=0.12;
+  const yPos=[MH+GAP, 0, -(MH+GAP)];
+  const root=new THREE.Group(); scene.add(root);
+  yPos.forEach(yp=>{ const body=new THREE.Mesh(new THREE.BoxGeometry(MW,MH,MD)); body.position.set(0,yp,0); wf(body,root); });
+  const yp0=yPos[0],z=MD/2+0.005,S=0.52,cx=0,cy=yp0, verts=[];
+  function seg(ax,ay,bx,by){verts.push(ax,ay,z,bx,by,z);}
+  function arc(pts,ox,oy,rx,ry,a0,a1,steps){
+    for(let i=0;i<=steps;i++){const a=a0+(a1-a0)*(i/steps);pts.push(new THREE.Vector3(ox+Math.cos(a)*rx,oy+Math.sin(a)*ry,z));}}
+  const tw=S*0.75,bw=S*0.55,ch=S*0.72,ty=cy+S*0.05,by2=ty-ch;
+  seg(cx-tw/2,ty,cx+tw/2,ty); seg(cx-bw/2,by2,cx+bw/2,by2);
+  seg(cx-tw/2,ty,cx-bw/2,by2); seg(cx+tw/2,ty,cx+bw/2,by2);
+  const sp=[]; arc(sp,cx,by2-S*0.06,S*0.55,S*0.10,Math.PI,0,24); root.add(line(sp));
+  seg(cx-S*0.62,by2-S*0.06,cx+S*0.62,by2-S*0.06);
+  const hp=[]; const hcx=cx+tw/2,hcy=ty-ch*0.35;
+  arc(hp,hcx+S*0.14,hcy,S*0.14,S*0.22,Math.PI*0.5,-Math.PI*0.5,18); root.add(line(hp));
+  seg(hcx,hcy+S*0.22,hcx+S*0.14,hcy+S*0.22); seg(hcx,hcy-S*0.22,hcx+S*0.14,hcy-S*0.22);
+  [-S*0.22,0,S*0.22].forEach((sx,i)=>{
+    const stPts=[],sb=ty+S*0.08,st=ty+S*0.52;
+    for(let j=0;j<=16;j++){const t=j/16;stPts.push(new THREE.Vector3(cx+sx+Math.sin(t*Math.PI*2+i*2.1)*S*0.08,sb+(st-sb)*t,z));}
+    root.add(line(stPts));
+  });
+  const cg=new THREE.BufferGeometry(); cg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(verts),3));
+  root.add(new THREE.LineSegments(cg,matL));
+  const yp1=yPos[1],x0=-(MW/2-BZ)+0.1,x1=MW/2-BZ-0.1, wpts=[];
+  for(let i=0;i<=60;i++){const t=i/60;wpts.push(new THREE.Vector3(x0+(x1-x0)*t,yp1+Math.sin(t*Math.PI*3.5)*0.22*Math.sin(t*Math.PI),MD/2+0.005));}
+  root.add(line(wpts));
+  const yp2=yPos[2],bx0=-(MW/2-BZ)+0.08,by1=yp2+(MH/2-BZ)-0.06;
+  const fills=[0.9,0.55,0.72,0.38,0.85,0.48,0.63,0.30],rh=0.065,xMax=MW-BZ*2-0.16,bv=[];
+  fills.forEach((f,i)=>{
+    const ry=by1-i*(rh+0.025),fw=xMax*f;
+    bv.push(bx0,ry,MD/2+0.005,bx0+fw,ry,MD/2+0.005);
+    bv.push(bx0,ry-rh,MD/2+0.005,bx0+fw,ry-rh,MD/2+0.005);
+    bv.push(bx0,ry,MD/2+0.005,bx0,ry-rh,MD/2+0.005);
+    bv.push(bx0+fw,ry,MD/2+0.005,bx0+fw,ry-rh,MD/2+0.005);
+  });
+  const bg2=new THREE.BufferGeometry(); bg2.setAttribute('position',new THREE.BufferAttribute(new Float32Array(bv),3));
+  root.add(new THREE.LineSegments(bg2,matL));
+  root.rotation.set(0.10,-0.44,0); root.scale.setScalar(1.8);
+  (function animate(){ requestAnimationFrame(animate); root.rotation.y+=0.004; r.render(scene,cam); })();
+}
+
+// ── Legacy background init functions (keyed by app code) ──
+const LEGACY_BG = { STB: initSTB, CDK: initCDK, AO: initAO, MSO: initMSO };
+
+// ── Wire all backgrounds (dynamic): manifest bg_js first, else legacy by code ──
+function initAllBackgrounds() {
+  APPS.forEach(app => {
+    const canvasId = 'bg-' + app.code.toLowerCase();
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    if (app.bg_js) {
+      try {
+        new Function('canvas', 'THREE', 'makeRenderer', 'makeWF', app.bg_js)(canvas, THREE, makeRenderer, makeWF);
+      } catch(e) { console.warn('bg_js error for', app.code, e); }
+    } else if (LEGACY_BG[app.code]) {
+      LEGACY_BG[app.code](canvas);
+    } else {
+      return; // no background — flat color shows
+    }
+    canvas.classList.add('show');
+  });
+}
+</script>
+
+<!-- ════════════════ CONFIG MODE ════════════════ -->
+<style>
+  #config-overlay {
+    position:fixed; inset:0; z-index:60; display:none;
+    background:rgba(3,3,8,0.86); backdrop-filter:blur(3px);
+    align-items:center; justify-content:center; font-family:var(--mono);
+  }
+  #config-overlay.show { display:flex; }
+  #config-panel {
+    width:min(720px,92vw); max-height:88vh; overflow-y:auto;
+    background:#0b0e16; border:1px solid rgba(65,255,107,0.35);
+    box-shadow:0 0 40px rgba(65,255,107,0.12); border-radius:4px;
+    padding:20px 22px; color:rgba(255,255,255,0.85);
+  }
+  .cfg-head { display:flex; justify-content:space-between; align-items:center;
+    font-size:15px; letter-spacing:0.14em; color:var(--green);
+    text-shadow:0 0 8px var(--glow); border-bottom:1px solid rgba(255,255,255,0.1);
+    padding-bottom:10px; }
+  .cfg-close { cursor:pointer; font-size:12px; color:rgba(255,255,255,0.55); }
+  .cfg-close:hover { color:var(--green); }
+  .cfg-sub { font-size:11px; color:rgba(255,255,255,0.4); letter-spacing:0.06em;
+    margin:8px 0 14px; }
+  .cfg-row { display:flex; align-items:center; gap:10px; padding:8px 10px;
+    border:1px solid rgba(255,255,255,0.08); border-radius:3px; margin-bottom:6px;
+    background:rgba(255,255,255,0.02); }
+  .cfg-row.disabled { opacity:0.45; }
+  .cfg-swatch { width:14px; height:14px; border-radius:2px; flex-shrink:0;
+    border:1px solid rgba(255,255,255,0.2); }
+  .cfg-code { font-weight:bold; letter-spacing:0.08em; min-width:48px; font-size:13px; }
+  .cfg-name { flex:1; font-size:13px; color:rgba(255,255,255,0.78);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cfg-route { font-size:11px; color:rgba(255,255,255,0.4); min-width:90px; }
+  .cfg-arrows { display:flex; flex-direction:column; gap:1px; }
+  .cfg-btn { cursor:pointer; font-size:11px; padding:2px 7px; user-select:none;
+    border:1px solid rgba(255,255,255,0.15); border-radius:2px;
+    color:rgba(255,255,255,0.6); background:transparent; line-height:1.2; }
+  .cfg-btn:hover { border-color:var(--green); color:var(--green); }
+  .cfg-btn.del:hover { border-color:#ff5555; color:#ff5555; }
+  .cfg-src { font-size:9px; letter-spacing:0.1em; color:rgba(255,255,255,0.3);
+    min-width:64px; text-align:right; }
+  .cfg-addbox { margin-top:16px; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px; }
+  .cfg-addtitle { font-size:12px; letter-spacing:0.12em; color:var(--green); margin-bottom:10px; }
+  .cfg-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .cfg-form input { background:#05060b; border:1px solid rgba(255,255,255,0.18);
+    color:rgba(255,255,255,0.85); font-family:var(--mono); font-size:12px;
+    padding:6px 8px; border-radius:2px; }
+  .cfg-form input:focus { outline:none; border-color:var(--green); }
+  .cfg-form input#cfg-code { width:64px; text-transform:uppercase; }
+  .cfg-form input#cfg-name { width:150px; }
+  .cfg-form input#cfg-route { width:96px; }
+  .cfg-form input#cfg-port { width:74px; }
+  .cfg-form input#cfg-color { width:38px; padding:2px; height:30px; cursor:pointer; }
+  .cfg-form button { background:transparent; border:1px solid var(--green);
+    color:var(--green); font-family:var(--mono); font-size:12px; letter-spacing:0.1em;
+    padding:6px 16px; border-radius:2px; cursor:pointer; }
+  .cfg-form button:hover { background:rgba(65,255,107,0.12); text-shadow:0 0 8px var(--glow); }
+  #cfg-msg { font-size:11px; margin-top:10px; min-height:14px; letter-spacing:0.04em; }
+</style>
+
+<div id="config-overlay" onclick="if(event.target===this)closeConfig()">
+  <div id="config-panel">
+    <div class="cfg-head">
+      <span>LAUNCHER CONFIG &middot; MANIFEST</span>
+      <span class="cfg-close" onclick="closeConfig()">[ CLOSE ]</span>
+    </div>
+    <div class="cfg-sub">Source: HomeOps launcher_manifest add-in &middot; changes save &amp; apply immediately</div>
+    <div id="cfg-list"></div>
+    <div class="cfg-addbox">
+      <div class="cfg-addtitle">+ ADD BUTTON</div>
+      <div class="cfg-form">
+        <input id="cfg-code" placeholder="CODE" maxlength="5">
+        <input id="cfg-name" placeholder="Name">
+        <input id="cfg-route" placeholder="/route/">
+        <input id="cfg-port" placeholder="Port" type="number">
+        <input id="cfg-color" type="color" value="#64748B" title="Button colour">
+        <button onclick="cfgAdd()">ADD</button>
+      </div>
+      <div id="cfg-msg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════ CONFIG MODE ════════════════
+// CRUD over the HomeOps launcher_manifest add-in (same as index.html). All
+// writes hit MANIFEST_BASE then re-pull the manifest so the field reflects it.
+function cfgSetMsg(text, ok) {
+  const m = document.getElementById('cfg-msg');
+  m.textContent = text || '';
+  m.style.color = ok === false ? '#ff6b6b' : 'rgba(65,255,107,0.8)';
+}
+async function openConfig() {
+  document.getElementById('config-overlay').classList.add('show');
+  cfgSetMsg('');
+  await cfgLoad();
+}
+function closeConfig() {
+  document.getElementById('config-overlay').classList.remove('show');
+}
+async function cfgLoad() {
+  const list = document.getElementById('cfg-list');
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps/all');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    cfgRender(data.apps || []);
+  } catch (e) {
+    list.innerHTML = '<div class="cfg-sub" style="color:#ff6b6b">Cannot reach HomeOps manifest API on :8086.</div>';
+  }
+}
+function cfgRender(apps) {
+  const list = document.getElementById('cfg-list');
+  list.innerHTML = '';
+  apps.forEach((app, i) => {
+    const row = document.createElement('div');
+    row.className = 'cfg-row' + (app.is_deployed ? '' : ' disabled');
+    const isFirst = i === 0, isLast = i === apps.length - 1;
+    row.innerHTML = `
+      <div class="cfg-arrows">
+        <span class="cfg-btn" ${isFirst ? 'style="visibility:hidden"' : ''} data-act="up">▲</span>
+        <span class="cfg-btn" ${isLast ? 'style="visibility:hidden"' : ''} data-act="down">▼</span>
+      </div>
+      <span class="cfg-swatch" style="background:${app.color || '#64748B'}"></span>
+      <span class="cfg-code" style="color:${app.color || '#fff'}">${app.code || '—'}</span>
+      <span class="cfg-name">${app.name || ''}</span>
+      <span class="cfg-route">${app.route_path || ''}</span>
+      <span class="cfg-src">${(app.source || 'curated').toUpperCase()}</span>
+      <span class="cfg-btn" data-act="toggle">${app.is_deployed ? 'ON' : 'OFF'}</span>
+      <span class="cfg-btn del" data-act="del">DEL</span>`;
+    row.querySelector('[data-act="up"]').onclick   = () => cfgMove(apps, i, -1);
+    row.querySelector('[data-act="down"]').onclick = () => cfgMove(apps, i, 1);
+    row.querySelector('[data-act="toggle"]').onclick = () => cfgToggle(app);
+    row.querySelector('[data-act="del"]').onclick    = () => cfgDelete(app);
+    list.appendChild(row);
+  });
+}
+async function cfgMove(apps, idx, dir) {
+  const other = idx + dir;
+  if (other < 0 || other >= apps.length) return;
+  const a = apps[idx], b = apps[other];
+  try {
+    await fetch(MANIFEST_BASE + '/api/apps/' + a.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sort_order: b.sort_order })
+    });
+    await fetch(MANIFEST_BASE + '/api/apps/' + b.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sort_order: a.sort_order })
+    });
+    await cfgLoad(); await reloadButtons();
+  } catch (e) { cfgSetMsg('Move failed: ' + e, false); }
+}
+async function cfgToggle(app) {
+  try {
+    await fetch(MANIFEST_BASE + '/api/apps/' + app.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ is_deployed: app.is_deployed ? 0 : 1 })
+    });
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg(app.name + (app.is_deployed ? ' hidden' : ' shown'));
+  } catch (e) { cfgSetMsg('Toggle failed: ' + e, false); }
+}
+async function cfgDelete(app) {
+  if (!confirm('Delete button "' + app.name + '"? This removes it from the manifest.')) return;
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps/' + app.id, { method:'DELETE' });
+    if (!r.ok) throw new Error(r.status);
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg('Deleted ' + app.name);
+  } catch (e) { cfgSetMsg('Delete failed: ' + e, false); }
+}
+async function cfgAdd() {
+  const code  = document.getElementById('cfg-code').value.trim().toUpperCase();
+  const name  = document.getElementById('cfg-name').value.trim();
+  const route = document.getElementById('cfg-route').value.trim() || '/';
+  const port  = document.getElementById('cfg-port').value.trim();
+  const color = document.getElementById('cfg-color').value;
+  if (!name || !code) { cfgSetMsg('Code and Name are required.', false); return; }
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        code, name, route_path: route, color,
+        port: port ? parseInt(port, 10) : null,
+        sort_order: document.querySelectorAll('#cfg-list .cfg-row').length,
+        is_deployed: 1, source: 'curated'
+      })
+    });
+    if (!r.ok) { const t = await r.text(); throw new Error(t || r.status); }
+    document.getElementById('cfg-code').value = '';
+    document.getElementById('cfg-name').value = '';
+    document.getElementById('cfg-route').value = '';
+    document.getElementById('cfg-port').value = '';
+    await cfgLoad(); await reloadButtons();
+    cfgSetMsg('Added ' + name);
+  } catch (e) { cfgSetMsg('Add failed: ' + e.message, false); }
+}
+// Re-pull the live manifest and rebuild the button field.
+async function reloadButtons() {
+  try {
+    const r = await fetch(MANIFEST_BASE + '/api/apps');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    APP_SERVER = data.app_server_url || window.location.origin;
+    APPS = data.apps || [];
+    buildButtons();
+    document.getElementById('button-field').classList.add('show');
+    requestAnimationFrame(() => requestAnimationFrame(initAllBackgrounds));
+  } catch (e) { console.error('reloadButtons failed', e); }
+}
+// Shift+C opens config; Esc closes it.
+document.addEventListener('keydown', e => {
+  if (e.key === 'C' && e.shiftKey) { e.preventDefault(); openConfig(); }
+  if (e.key === 'Escape') closeConfig();
+});
+</script>
+</body>
+</html>

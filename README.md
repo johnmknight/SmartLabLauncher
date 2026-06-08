@@ -71,10 +71,32 @@ Dynamic — loaded from the HomeOps launcher_manifest add-in. Current apps:
 | MSO  | MarchogSystemsOps | :8082 | `#8A1A1A` red | `/marchog/` |
 | LDL  | LEDLibris | :8088 | `#F59E0B` amber | `/libris/` |
 
+## TouchOps page (`touchops.html`)
+
+A second, standalone launcher page optimised for the TouchOps touch panel
+(DISPLAY3, the ~1168×400 wide strip — see the TouchOps left button bar).
+
+- **URL:** `http://192.168.4.148/touchops.html` — add this as a TouchOps tab.
+- **Same infrastructure:** reads the same HomeOps `launcher_manifest` add-in
+  (`/api/apps`, `/api/containers`, and the CFG CRUD endpoints). Single source
+  of truth with `index.html`; no separate manifest.
+- **Strip-optimised layout:** no CLI cinematic boot (instant fade-in); thin top
+  chrome only (title · container count · UTC clock · `[ CFG ]`), no bottom bar.
+  Buttons fill the strip via a fluid grid that adapts to app count — a single
+  tall row for ≤5 apps, **2 rows** above that (6 apps → 2×3). Tiles use
+  container-query units so the code/glyph scale to the tile; the page fills the
+  viewport fluidly (no fixed-px box) so there is zero overflow at any size.
+- **Retained:** flat per-app colour, Orbitron code, app name, Cobb-octagon
+  glyph, Three.js wireframe backgrounds, status dots, hover/glow/press, and the
+  full CFG config mode (add/move/toggle/delete).
+
+`index.html` (the cinematic full-screen launcher) is unchanged.
+
 ## Stack
 
 Static site — HTML + CSS + vanilla JS. No framework, no build step.
-Served directly from nginx on appserv1.
+Served directly from nginx on appserv1. Two pages: `index.html` (cinematic,
+nginx root `/`) and `touchops.html` (touch-panel strip).
 
 ## Repository
 
